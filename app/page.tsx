@@ -33,6 +33,26 @@ type Stats = {
   open_opportunities: number;
   open_opportunities_value: number;
 };
+type LaunchpadEntry = {
+  id: string;
+  name: string;
+  slug: string;
+  entity_type: string;
+  parent_name: string | null;
+  modules_total: number;
+  modules_approved: number;
+  modules_draft: number;
+  readiness_pct: number;
+  stage: 'not_started' | 'in_progress' | 'brain_drafted' | 'brain_complete';
+  is_live: boolean;
+};
+
+const LAUNCHPAD_STAGES: { key: LaunchpadEntry['stage']; label: string }[] = [
+  { key: 'not_started', label: 'Not Started' },
+  { key: 'in_progress', label: 'Brain In Progress' },
+  { key: 'brain_drafted', label: 'Brain Drafted (needs approval)' },
+  { key: 'brain_complete', label: 'Brain Complete' },
+];
 
 const COLUMNS: { key: string; label: string; stages: string[] }[] = [
   { key: 'new', label: 'New', stages: ['new', 'contacted', 'responded'] },
@@ -56,7 +76,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [tab, setTab] = useState<'pipeline' | 'contacts'>('pipeline');
+  const [launchpad, setLaunchpad] = useState<LaunchpadEntry[]>([]);
+  const [tab, setTab] = useState<'pipeline' | 'contacts' | 'launchpad'>('pipeline');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -67,6 +88,9 @@ export default function Dashboard() {
         const firstOperating = data.find((c) => c.entity_type !== 'portfolio') ?? data[0];
         if (firstOperating) setCompanyId(firstOperating.id);
       });
+    fetch('/api/launchpad')
+      .then((r) => r.json())
+      .then((data: LaunchpadEntry[]) => setLaunchpad(data));
   }, []);
 
   useEffect(() => {
@@ -139,7 +163,7 @@ export default function Dashboard() {
       )}
 
       <div className="flex gap-1 mb-4 border-b border-inksoft/20">
-        {(['pipeline', 'contacts'] as const).map((t) => (
+        {(['pipeline', 'contacts', 'launchpad'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -147,7 +171,7 @@ export default function Dashboard() {
               tab === t ? 'border-brass text-brassink' : 'border-transparent text-inksoft'
             }`}
           >
-            {t === 'pipeline' ? 'Leads Pipeline' : 'Contacts'}
+            {t === 'pipeline' ? 'Leads Pipeline' : t === 'contacts' ? 'Contacts' : 'Launchpad'}
           </button>
         ))}
       </div>
@@ -248,6 +272,60 @@ export default function Dashboard() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {tab === 'launchpad' && (
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {LAUNCHPAD_STAGES.map((stageCol) => {
+            const entries = launchpad.filter((e) => e.stage === stageCol.key);
+            return (
+              <div
+                key={stageCol.key}
+                className="kanban-col flex-1 bg-surface/60 rounded border border-inksoft/15 min-w-[240px]"
+              >
+                <div className="px-3 py-2 border-b border-inksoft/15 font-semibold text-sm flex justify-between">
+                  <span>{stageCol.label}</span>
+                  <span className="font-mono text-inksoft">{entries.length}</span>
+                </div>
+                <div className="p-2 flex flex-col gap-2 min-h-[120px]">
+                  {entries.map((e) => (
+                    <div
+                      key={e.id}
+                      className="bg-paper border border-inksoft/20 rounded p-3 text-sm shadow-sm"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold">{e.name}</span>
+                        {e.is_live && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-okbg text-ok">
+                            LIVE
+                          </span>
+                        )}
+                      </div>
+                      {e.parent_name && (
+                        <div className="text-inksoft text-xs mt-0.5">under {e.parent_name}</div>
+                      )}
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="font-mono text-xs text-brassink">
+                          {e.modules_approved}/20 modules
+                        </span>
+                        <span className="font-mono text-xs text-inksoft">{e.readiness_pct}%</span>
+                      </div>
+                      <div className="h-1.5 bg-inksoft/10 rounded mt-1.5 overflow-hidden">
+                        <div
+                          className="h-full bg-brass"
+                          style={{ width: `${e.readiness_pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {entries.length === 0 && (
+                    <div className="text-inksoft text-xs text-center py-4">None</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
