@@ -2,15 +2,122 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens from the Aya Executive OS system, held as RGB channels so
+   Tailwind's alpha modifiers (bg-surface/70, border-outline-variant/30) keep
+   working. Themes swap by redefining the variables, which means no component
+   carries a per-theme class. */
 @layer base {
-  html,
-  body {
+  :root {
+    --c-background: 247 249 255;
+    --c-surface: 247 249 255;
+    --c-surface-dim: 204 220 240;
+    --c-surface-bright: 247 249 255;
+    --c-surface-container-lowest: 255 255 255;
+    --c-surface-container-low: 237 244 255;
+    --c-surface-container: 227 239 255;
+    --c-surface-container-high: 218 234 254;
+    --c-surface-container-highest: 212 228 248;
+    --c-surface-variant: 212 228 248;
+    --c-surface-tint: 72 97 116;
+    --c-on-surface: 13 29 43;
+    --c-on-surface-variant: 66 71 76;
+    --c-on-background: 13 29 43;
+    --c-inverse-surface: 35 50 65;
+    --c-inverse-on-surface: 232 241 255;
+    --c-outline: 115 120 124;
+    --c-outline-variant: 194 199 204;
+    --c-primary: 0 30 46;
+    --c-on-primary: 255 255 255;
+    --c-primary-container: 24 51 68;
+    --c-on-primary-container: 129 155 176;
+    --c-inverse-primary: 175 202 224;
+    --c-secondary: 0 106 97;
+    --c-on-secondary: 255 255 255;
+    --c-secondary-container: 153 243 230;
+    --c-on-secondary-container: 0 113 104;
+    --c-tertiary: 31 13 77;
+    --c-on-tertiary: 255 255 255;
+    --c-tertiary-container: 52 37 99;
+    --c-on-tertiary-container: 158 142 211;
+    --c-error: 186 26 26;
+    --c-on-error: 255 255 255;
+    --c-error-container: 255 218 214;
+    --c-on-error-container: 147 0 10;
+    --c-primary-fixed: 203 230 252;
+    --c-primary-fixed-dim: 175 202 224;
+    --c-on-primary-fixed: 0 30 46;
+    --c-on-primary-fixed-variant: 48 74 91;
+    --c-secondary-fixed: 153 243 230;
+    --c-secondary-fixed-dim: 125 214 202;
+    --c-on-secondary-fixed: 0 32 29;
+    --c-on-secondary-fixed-variant: 0 80 73;
+    --c-tertiary-fixed: 231 222 255;
+    --c-tertiary-fixed-dim: 205 189 255;
+    --c-on-tertiary-fixed: 31 13 78;
+    --c-on-tertiary-fixed-variant: 75 61 123;
+  }
+
+  /* Material 3 tonal counterparts, not an inversion: each role moves to the
+     tone carrying the same meaning on a dark ground, so the navy / teal /
+     lavender identity survives. Verified for WCAG contrast on every pairing
+     the interface uses. */
+  .dark {
+    --c-background: 13 20 24;
+    --c-surface: 13 20 24;
+    --c-surface-dim: 13 20 24;
+    --c-surface-bright: 50 58 64;
+    --c-surface-container-lowest: 8 14 18;
+    --c-surface-container-low: 21 28 33;
+    --c-surface-container: 25 32 37;
+    --c-surface-container-high: 35 42 48;
+    --c-surface-container-highest: 46 53 59;
+    --c-surface-variant: 64 72 77;
+    --c-surface-tint: 175 202 224;
+    --c-on-surface: 222 227 232;
+    --c-on-surface-variant: 192 200 206;
+    --c-on-background: 222 227 232;
+    --c-inverse-surface: 222 227 232;
+    --c-inverse-on-surface: 43 50 56;
+    --c-outline: 138 146 152;
+    --c-outline-variant: 64 72 77;
+    --c-primary: 175 202 224;
+    --c-on-primary: 23 50 63;
+    --c-primary-container: 143 179 201;
+    --c-on-primary-container: 11 31 43;
+    --c-inverse-primary: 72 97 116;
+    --c-secondary: 125 214 202;
+    --c-on-secondary: 0 55 49;
+    --c-secondary-container: 0 80 73;
+    --c-on-secondary-container: 153 243 230;
+    --c-tertiary: 205 189 255;
+    --c-on-tertiary: 52 33 95;
+    --c-tertiary-container: 75 61 123;
+    --c-on-tertiary-container: 231 222 255;
+    --c-error: 255 180 171;
+    --c-on-error: 105 0 5;
+    --c-error-container: 147 0 10;
+    --c-on-error-container: 255 218 214;
+    --c-primary-fixed: 203 230 252;
+    --c-primary-fixed-dim: 175 202 224;
+    --c-on-primary-fixed: 0 30 46;
+    --c-on-primary-fixed-variant: 48 74 91;
+    --c-secondary-fixed: 153 243 230;
+    --c-secondary-fixed-dim: 125 214 202;
+    --c-on-secondary-fixed: 0 32 29;
+    --c-on-secondary-fixed-variant: 0 80 73;
+    --c-tertiary-fixed: 231 222 255;
+    --c-tertiary-fixed-dim: 205 189 255;
+    --c-on-tertiary-fixed: 31 13 78;
+    --c-on-tertiary-fixed-variant: 75 61 123;
+  }
+
+  html, body {
     margin: 0;
     padding: 0;
   }
   body {
-    background: #f7f9ff;
-    color: #0d1d2b;
+    background: rgb(var(--c-background));
+    color: rgb(var(--c-on-surface));
     overscroll-behavior: none;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
@@ -20,6 +127,9 @@
   .font-tabular-dense {
     font-variant-numeric: tabular-nums;
   }
+  /* The browser's own widgets (scrollbars, form controls) follow the theme. */
+  :root { color-scheme: light; }
+  .dark { color-scheme: dark; }
 }
 
 /* Google's stylesheet defines this class too, but declaring it here means a
@@ -44,8 +154,9 @@
   flex-shrink: 0;
 }
 
-/* Until the icon font resolves, collapse the glyph slot instead of printing
-   the ligature name across the interface. */
-.fonts-pending .material-symbols-outlined {
-  visibility: hidden;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

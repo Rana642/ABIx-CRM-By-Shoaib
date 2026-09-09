@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AyaLogo } from './AyaLogo';
+import { ThemeToggle } from './ThemeToggle';
 
 export type Section =
   | 'overview'
@@ -177,14 +178,14 @@ export function Shell({
               className={`w-full flex items-center justify-between gap-space-8 px-space-12 py-space-8 rounded-lg transition-colors font-body-sm text-body-sm border border-tertiary-fixed-dim/40 ${
                 active === 'personal'
                   ? 'bg-tertiary-fixed text-on-tertiary-fixed'
-                  : 'bg-tertiary-fixed/40 text-on-tertiary-fixed-variant hover:bg-tertiary-fixed hover:text-on-tertiary-fixed'
+                  : 'bg-tertiary-fixed/40 text-on-tertiary-fixed-variant hover:bg-tertiary-fixed hover:text-on-tertiary-fixed dark:text-on-tertiary-container dark:hover:text-on-tertiary-fixed'
               }`}
             >
               <span className="flex items-center gap-space-8 min-w-0">
                 <Icon name="lock" className="text-tertiary text-[18px]" />
                 <span className="truncate font-medium">Personal</span>
               </span>
-              <span className="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-tertiary-container text-on-tertiary font-semibold uppercase tracking-wider shrink-0">
+              <span className="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-tertiary-container text-on-tertiary dark:text-on-tertiary-container font-semibold uppercase tracking-wider shrink-0">
                 Vault
               </span>
             </button>
@@ -233,6 +234,7 @@ export function Shell({
                 Automation: Observe only (A0)
               </span>
             </div>
+            <ThemeToggle />
             <div className="flex items-center gap-space-8">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
                 <Icon name="person" className="text-on-primary text-[18px]" />

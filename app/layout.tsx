@@ -1,4 +1,5 @@
 import './globals.css';
+import { THEME_INIT_SCRIPT } from '@/components/ThemeToggle';
 
 export const metadata = {
   title: 'Aya — AI Executive OS',
@@ -7,7 +8,9 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // The pre-paint script below sets a class on this element, so its rendered
+    // markup legitimately differs from the server's.
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* Loaded as links, not @import. A CSS @import is only valid before any
             other rule, and the @tailwind directives expand into rules above it,
@@ -23,6 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
           rel="stylesheet"
         />
+        {/* Applies the stored or system theme before first paint, so the page
+            never flashes light before switching to dark. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="bg-background font-body-md text-body-md text-on-surface antialiased min-h-screen">
         {children}
