@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     `SELECT id, name, phone, email, relationship, status, lead_temperature,
             location, last_contact_at, next_action, follow_up_date, owner,
             priority, do_not_contact, created_at
-     FROM contacts
+     FROM public.contacts
      WHERE company_id = $1
      ORDER BY last_contact_at DESC NULLS LAST`,
     [companyId]

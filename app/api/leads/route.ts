@@ -12,8 +12,8 @@ export async function GET(req: NextRequest) {
     `SELECT l.id, l.pipeline_stage, l.estimated_value, l.source, l.created_at, l.updated_at,
             c.id AS contact_id, c.name AS contact_name, c.phone, c.email,
             c.lead_temperature, c.priority, c.location
-     FROM leads l
-     JOIN contacts c ON c.id = l.contact_id
+     FROM public.leads l
+     JOIN public.contacts c ON c.id = l.contact_id
      WHERE l.company_id = $1
      ORDER BY l.updated_at DESC`,
     [companyId]
@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'id and pipeline_stage are required' }, { status: 400 });
   }
   const { rows } = await pool.query(
-    `UPDATE leads SET pipeline_stage = $1, updated_at = now() WHERE id = $2 RETURNING id, pipeline_stage`,
+    `UPDATE public.leads SET pipeline_stage = $1, updated_at = now() WHERE id = $2 RETURNING id, pipeline_stage`,
     [pipeline_stage, id]
   );
   return NextResponse.json(rows[0] ?? {});

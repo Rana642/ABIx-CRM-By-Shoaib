@@ -3,32 +3,40 @@ import { pool } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+// Readiness comes from abix.v_company_readiness, which implements the official
+// weighted formula from 08_COMPANY_BRAIN_ONBOARDING.yaml
+// (sum(module_score * weight) / 100) and applies the hard caps. It replaces the
+// earlier `approved / 20 * 100`, which ignored module weights entirely.
 export async function GET() {
   const { rows } = await pool.query(`
-    WITH brain_stats AS (
-      SELECT company_id,
-             count(*) AS modules_total,
-             count(*) FILTER (WHERE status = 'approved') AS modules_approved,
-             count(*) FILTER (WHERE status = 'draft') AS modules_draft
-      FROM company_brains
-      GROUP BY company_id
-    )
-    SELECT c.id, c.name, c.slug, c.entity_type, c.parent_id, p.name AS parent_name,
-           coalesce(b.modules_total, 0) AS modules_total,
-           coalesce(b.modules_approved, 0) AS modules_approved,
-           coalesce(b.modules_draft, 0) AS modules_draft,
-           round(coalesce(b.modules_approved, 0)::numeric / 20 * 100) AS readiness_pct,
+    SELECT c.company_id                       AS id,
+           c.display_name                     AS name,
+           coalesce(c.settings->>'legacy_slug', c.company_code) AS slug,
+           c.company_type                     AS entity_type,
+           c.status,
+           p.display_name                     AS parent_name,
+           r.modules_total,
+           r.modules_approved,
+           r.modules_draft,
+           round(r.readiness_score)           AS readiness_pct,
+           r.uncapped_level,
+           r.effective_level,
+           r.active_hard_caps,
+           q.state                            AS onboarding_state,
+           q.priority                         AS onboarding_priority,
+           q.stages_passed,
            CASE
-             WHEN coalesce(b.modules_total, 0) = 0 THEN 'not_started'
-             WHEN b.modules_total < 20 THEN 'in_progress'
-             WHEN b.modules_approved = 20 THEN 'brain_complete'
-             ELSE 'brain_drafted'
-           END AS stage,
-           (c.slug = 'clif') AS is_live
-    FROM companies c
-    LEFT JOIN brain_stats b ON b.company_id = c.id
-    LEFT JOIN companies p ON p.id = c.parent_id
-    ORDER BY readiness_pct DESC NULLS LAST, c.name ASC;
+             WHEN c.status = 'active'          THEN 'live'
+             WHEN r.modules_total = 0          THEN 'not_started'
+             WHEN r.readiness_score >= 65      THEN 'brain_ready'
+             ELSE 'in_progress'
+           END                                AS stage,
+           (c.status = 'active')              AS is_live
+    FROM abix.companies c
+    LEFT JOIN abix.v_company_readiness r ON r.company_id = c.company_id
+    LEFT JOIN abix.companies p            ON p.company_id = c.parent_company_id
+    LEFT JOIN abix.v_company_launchpad_queue q ON q.company_id = c.company_id
+    ORDER BY r.readiness_score DESC NULLS LAST, c.display_name ASC;
   `);
   return NextResponse.json(rows);
 }

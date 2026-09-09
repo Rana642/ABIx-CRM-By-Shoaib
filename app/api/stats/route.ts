@@ -10,19 +10,19 @@ export async function GET(req: NextRequest) {
   }
 
   const [contacts, leadsByStage, hotLeads, opportunities] = await Promise.all([
-    pool.query(`SELECT count(*)::int AS n FROM contacts WHERE company_id = $1`, [companyId]),
+    pool.query(`SELECT count(*)::int AS n FROM public.contacts WHERE company_id = $1`, [companyId]),
     pool.query(
       `SELECT pipeline_stage, count(*)::int AS n, coalesce(sum(estimated_value),0)::float AS value
-       FROM leads WHERE company_id = $1 GROUP BY pipeline_stage`,
+       FROM public.leads WHERE company_id = $1 GROUP BY pipeline_stage`,
       [companyId]
     ),
     pool.query(
-      `SELECT count(*)::int AS n FROM contacts WHERE company_id = $1 AND lead_temperature = 'hot'`,
+      `SELECT count(*)::int AS n FROM public.contacts WHERE company_id = $1 AND lead_temperature = 'hot'`,
       [companyId]
     ),
     pool.query(
       `SELECT count(*)::int AS n, coalesce(sum(estimated_value),0)::float AS value
-       FROM opportunities WHERE company_id = $1 AND status = 'open'`,
+       FROM public.opportunities WHERE company_id = $1 AND status = 'open'`,
       [companyId]
     ),
   ]);

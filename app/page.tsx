@@ -33,26 +33,52 @@ type Stats = {
   open_opportunities: number;
   open_opportunities_value: number;
 };
+type HardCap = { code: string; cap: string };
 type LaunchpadEntry = {
   id: string;
   name: string;
   slug: string;
   entity_type: string;
+  status: string;
   parent_name: string | null;
   modules_total: number;
   modules_approved: number;
   modules_draft: number;
   readiness_pct: number;
-  stage: 'not_started' | 'in_progress' | 'brain_drafted' | 'brain_complete';
+  uncapped_level: string | null;
+  effective_level: string | null;
+  active_hard_caps: HardCap[] | null;
+  onboarding_state: string | null;
+  onboarding_priority: string | null;
+  stage: 'not_started' | 'in_progress' | 'brain_ready' | 'live';
   is_live: boolean;
+};
+type BlockerSubject = { label: string; note: string | null };
+type Blocker = {
+  kind: string;
+  severity: 'critical' | 'high' | 'medium';
+  title: string;
+  detail: string;
+  subjects: BlockerSubject[];
 };
 
 const LAUNCHPAD_STAGES: { key: LaunchpadEntry['stage']; label: string }[] = [
   { key: 'not_started', label: 'Not Started' },
   { key: 'in_progress', label: 'Brain In Progress' },
-  { key: 'brain_drafted', label: 'Brain Drafted (needs approval)' },
-  { key: 'brain_complete', label: 'Brain Complete' },
+  { key: 'brain_ready', label: 'Brain Ready (65%+)' },
+  { key: 'live', label: 'Live' },
 ];
+
+const CAP_LABELS: Record<string, string> = {
+  no_accountable_human_owner: 'no human owner',
+  identity_or_legal_entity_unresolved: 'identity unresolved',
+  active_critical_brain_conflict: 'brain conflict',
+  a3_thresholds_missing: 'no thresholds set',
+  no_tested_kill_switch_audit_verification: 'writes unverified',
+  critical_connector_untested: 'connector untested',
+  active_sev1_or_kill_switch: 'incident active',
+  expired_critical_module: 'expired module',
+};
 
 const COLUMNS: { key: string; label: string; stages: string[] }[] = [
   { key: 'new', label: 'New', stages: ['new', 'contacted', 'responded'] },
@@ -77,7 +103,8 @@ export default function Dashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [launchpad, setLaunchpad] = useState<LaunchpadEntry[]>([]);
-  const [tab, setTab] = useState<'pipeline' | 'contacts' | 'launchpad'>('pipeline');
+  const [blockers, setBlockers] = useState<Blocker[]>([]);
+  const [tab, setTab] = useState<'pipeline' | 'contacts' | 'launchpad' | 'blockers'>('pipeline');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -91,6 +118,9 @@ export default function Dashboard() {
     fetch('/api/launchpad')
       .then((r) => r.json())
       .then((data: LaunchpadEntry[]) => setLaunchpad(data));
+    fetch('/api/blockers')
+      .then((r) => r.json())
+      .then((data: Blocker[]) => setBlockers(data));
   }, []);
 
   useEffect(() => {
@@ -163,7 +193,7 @@ export default function Dashboard() {
       )}
 
       <div className="flex gap-1 mb-4 border-b border-inksoft/20">
-        {(['pipeline', 'contacts', 'launchpad'] as const).map((t) => (
+        {(['pipeline', 'contacts', 'launchpad', 'blockers'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -171,7 +201,18 @@ export default function Dashboard() {
               tab === t ? 'border-brass text-brassink' : 'border-transparent text-inksoft'
             }`}
           >
-            {t === 'pipeline' ? 'Leads Pipeline' : t === 'contacts' ? 'Contacts' : 'Launchpad'}
+            {t === 'pipeline'
+              ? 'Leads Pipeline'
+              : t === 'contacts'
+              ? 'Contacts'
+              : t === 'launchpad'
+              ? 'Launchpad'
+              : 'Blockers'}
+            {t === 'blockers' && blockers.length > 0 && (
+              <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-mono bg-warnbg text-warn">
+                {blockers.reduce((n, b) => n + b.subjects.length, 0)}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -309,14 +350,41 @@ export default function Dashboard() {
                         <span className="font-mono text-xs text-brassink">
                           {e.modules_approved}/20 modules
                         </span>
-                        <span className="font-mono text-xs text-inksoft">{e.readiness_pct}%</span>
+                        <span className="font-mono text-xs text-inksoft">
+                          {e.readiness_pct ?? 0}%
+                        </span>
                       </div>
                       <div className="h-1.5 bg-inksoft/10 rounded mt-1.5 overflow-hidden">
                         <div
                           className="h-full bg-brass"
-                          style={{ width: `${e.readiness_pct}%` }}
+                          style={{ width: `${e.readiness_pct ?? 0}%` }}
                         />
                       </div>
+                      {e.effective_level && (
+                        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-inksoft/10">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold bg-surface text-inksoft">
+                            cap {e.effective_level}
+                          </span>
+                          {e.uncapped_level && e.uncapped_level !== e.effective_level && (
+                            <span className="text-[10px] text-inksoft font-mono">
+                              (score allows {e.uncapped_level})
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {e.active_hard_caps && e.active_hard_caps.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {e.active_hard_caps.map((c) => (
+                            <span
+                              key={c.code}
+                              title={`caps this company at ${c.cap}`}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-warnbg text-warn"
+                            >
+                              {CAP_LABELS[c.code] ?? c.code}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                   {entries.length === 0 && (
@@ -326,6 +394,57 @@ export default function Dashboard() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {tab === 'blockers' && (
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-inksoft max-w-[70ch]">
+            Everything currently waiting on a human decision, generated from the portfolio
+            manifest and the Company Brain readiness rules — not hand-maintained.
+          </p>
+          {blockers.map((b) => (
+            <div
+              key={b.kind}
+              className={`border rounded overflow-hidden ${
+                b.severity === 'critical'
+                  ? 'border-warn/50'
+                  : 'border-inksoft/20'
+              }`}
+            >
+              <div className="px-4 py-3 bg-surface border-b border-inksoft/15">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${
+                      b.severity === 'critical'
+                        ? 'bg-warnbg text-warn'
+                        : 'bg-surface text-inksoft border border-inksoft/20'
+                    }`}
+                  >
+                    {b.severity}
+                  </span>
+                  <span className="font-semibold text-sm">{b.title}</span>
+                  <span className="font-mono text-xs text-inksoft ml-auto">
+                    {b.subjects.length}
+                  </span>
+                </div>
+                <div className="text-xs text-inksoft mt-1 max-w-[80ch]">{b.detail}</div>
+              </div>
+              <div className="divide-y divide-inksoft/10">
+                {b.subjects.map((s, i) => (
+                  <div key={i} className="px-4 py-2 flex gap-3 text-sm">
+                    <span className="font-medium min-w-[180px]">{s.label}</span>
+                    <span className="text-inksoft text-xs pt-0.5">{s.note}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {blockers.length === 0 && (
+            <div className="text-inksoft text-sm py-8 text-center border border-inksoft/15 rounded">
+              Nothing blocked. Every entity is verified and owned.
+            </div>
+          )}
         </div>
       )}
     </div>
