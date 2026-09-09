@@ -42,7 +42,9 @@ export function Overview({
               Observe only — no company promoted yet
             </span>
           </div>
-          <h1 className="font-display text-display text-primary mt-space-4">Good morning, Serge.</h1>
+          <h1 className="font-headline-lg-mobile text-headline-lg-mobile md:font-display md:text-display text-primary mt-space-4 text-balance">
+            Good morning, Serge.
+          </h1>
           <p className="font-body-lg text-body-lg text-on-surface-variant">
             {decisions.total} decisions are waiting on you. Nothing acts without your approval.
           </p>
@@ -215,14 +217,17 @@ export function Overview({
                 Audited
               </span>
             </div>
-            <div className="flex flex-col items-start gap-space-8 mt-space-16 flex-1 justify-center py-space-24">
-              <span className="font-body-md text-body-md text-on-surface font-semibold">
-                No agent has executed yet.
-              </span>
-              <p className="font-body-sm text-body-sm text-on-surface-variant max-w-[46ch]">
-                {portfolio.unavailable.missions} Once work is dispatched, every completed action
-                appears here with its verification evidence.
-              </p>
+            <div className="mt-space-16 p-space-16 rounded-lg bg-surface-container-low flex items-start gap-space-12">
+              <Icon name="hourglass_empty" className="text-outline text-[20px] mt-0.5 shrink-0" />
+              <div className="flex flex-col gap-space-4">
+                <span className="font-body-md text-body-md text-on-surface font-semibold">
+                  No agent has executed yet
+                </span>
+                <p className="font-body-sm text-body-sm text-on-surface-variant max-w-[52ch]">
+                  {portfolio.unavailable.missions} Once work is dispatched, every completed action
+                  appears here with its verification evidence.
+                </p>
+              </div>
             </div>
             <div className="mt-space-16 pt-space-12 border-t border-surface-container flex items-center justify-between font-label-sm text-label-sm text-outline">
               <span>Audit trail ready — {portfolio.ops.agent_runs} runs recorded</span>
