@@ -28,6 +28,18 @@ export function Overview({
   const withBrain = launchpad.filter((e) => e.modules_total > 0);
   const asOf = new Date(portfolio.as_of);
 
+  const above = portfolio.autonomy.companies_above_a0;
+  const capped = withBrain.filter(
+    (e) => e.uncapped_level && e.uncapped_level !== e.effective_level
+  );
+  // The most-affected open decision, so the headline metric names a real cause
+  // instead of assuming which blocker is dominant.
+  const topBlocker = [...blockers].sort((a, b) => b.subjects.length - a.subjects.length)[0];
+  // Closest to promotion: highest score still short of the next authority level.
+  const nextUp = [...withBrain].sort(
+    (a, b) => (b.readiness_pct ?? 0) - (a.readiness_pct ?? 0)
+  )[0];
+
   return (
     <div className="flex flex-col w-full">
       {/* Executive header */}
@@ -39,14 +51,20 @@ export function Overview({
             </span>
             <span className="h-1.5 w-1.5 rounded-full bg-outline-variant" />
             <span className="font-label-sm text-label-sm text-on-surface-variant uppercase font-semibold">
-              Observe only — no company promoted yet
+              {above === 0
+                ? 'Observe only — no company promoted yet'
+                : `${above} of ${portfolio.companies.total} above observe-only`}
             </span>
           </div>
           <h1 className="font-headline-lg-mobile text-headline-lg-mobile md:font-display md:text-display text-primary mt-space-4 text-balance">
             Good morning, Serge.
           </h1>
           <p className="font-body-lg text-body-lg text-on-surface-variant">
-            {decisions.total} decisions are waiting on you. Nothing acts without your approval.
+            {decisions.total === 0
+              ? 'Nothing is waiting on you. Nothing acts without your approval.'
+              : `${decisions.total} decision${
+                  decisions.total === 1 ? ' is' : 's are'
+                } waiting on you. Nothing acts without your approval.`}
           </p>
         </div>
         <div className="flex items-center gap-space-12 flex-wrap">
@@ -105,27 +123,35 @@ export function Overview({
           tone="alert"
           value={decisions.total}
           sub={
-            <span className="font-body-sm text-body-sm text-error font-semibold truncate">
-              {decisions.missing_owner} companies have no owner
+            <span className="font-body-sm text-body-sm text-on-surface-variant truncate">
+              {topBlocker
+                ? `Largest: ${topBlocker.title.toLowerCase()} (${topBlocker.subjects.length})`
+                : 'Every recorded question has been answered'}
             </span>
           }
           footer={
             <>
-              <span className="font-label-sm text-label-sm text-outline uppercase">Blocking autonomy</span>
-              <span className="h-2 w-2 rounded-full bg-error" />
+              <span className="font-label-sm text-label-sm text-outline uppercase">
+                {capped.length > 0 ? 'Blocking autonomy' : 'Not blocking autonomy'}
+              </span>
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  capped.length > 0 ? 'bg-error' : 'bg-secondary'
+                }`}
+              />
             </>
           }
         />
         <MetricCard
           label="Autonomous coverage"
           icon="bolt"
-          value={`${portfolio.autonomy.companies_above_a0} / ${portfolio.companies.total}`}
+          value={`${above} / ${portfolio.companies.total}`}
           sub={
             <span className="font-body-sm text-body-sm text-outline">
               above observe-only · {portfolio.autonomy.verified_actions} verified actions
             </span>
           }
-          progress={0}
+          progress={(above / Math.max(1, portfolio.companies.total)) * 100}
         />
         <NotConnected
           label="AI & tool spend"
@@ -155,6 +181,20 @@ export function Overview({
               </span>
             </div>
             <div className="flex flex-col gap-space-12 mt-space-16">
+              {blockers.length === 0 && (
+                <div className="p-space-16 rounded-lg bg-surface-container-low flex items-start gap-space-12">
+                  <Icon name="check_circle" className="text-secondary text-[20px] mt-0.5 shrink-0" />
+                  <div className="flex flex-col gap-space-4">
+                    <span className="font-body-md text-body-md text-on-surface font-semibold">
+                      Nothing is waiting on you
+                    </span>
+                    <p className="font-body-sm text-body-sm text-on-surface-variant max-w-[52ch]">
+                      Every open question in the portfolio manifest has been answered. New ones
+                      appear here as entities are onboarded.
+                    </p>
+                  </div>
+                </div>
+              )}
               {blockers.slice(0, 3).map((b) => (
                 <div
                   key={b.kind}
@@ -290,28 +330,42 @@ export function Overview({
               </span>
             </div>
             <div className="flex flex-col gap-space-12 mt-space-16">
-              <div className="p-space-12 rounded-lg bg-surface-container-low flex items-start gap-space-8">
-                <Icon name="person_add" className="text-primary text-[20px] mt-0.5 shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-body-md text-body-md font-semibold text-on-surface">
-                    Name an accountable owner for each company
-                  </span>
-                  <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    One input lifts the hard cap on all {decisions.missing_owner} companies at once.
-                  </span>
-                </div>
-              </div>
-              <div className="p-space-12 rounded-lg bg-surface-container-low flex items-start gap-space-8">
-                <Icon name="neurology" className="text-tertiary text-[20px] mt-0.5 shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-body-md text-body-md font-semibold text-on-surface">
-                    Complete CLIF&apos;s remaining Brain modules
-                  </span>
-                  <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    CLIF is the pilot and the closest to a promotable score.
-                  </span>
-                </div>
-              </div>
+              {decisions.missing_owner > 0 && (
+                <Recommendation
+                  icon="person_add"
+                  tone="text-primary"
+                  title="Name an accountable owner for each company"
+                  detail={`One input lifts the hard cap on ${decisions.missing_owner} companies at once.`}
+                />
+              )}
+              {nextUp && (
+                <Recommendation
+                  icon="neurology"
+                  tone="text-tertiary"
+                  title={`Complete ${nextUp.name}'s remaining Brain modules`}
+                  detail={`At ${nextUp.readiness_pct ?? 0}% it is the closest to the next authority level — ${
+                    nextUp.modules_total - nextUp.modules_approved
+                  } of ${nextUp.modules_total} modules still unapproved.`}
+                />
+              )}
+              {capped.length > 0 && (
+                <Recommendation
+                  icon="gpp_maybe"
+                  tone="text-error"
+                  title="Clear the remaining hard caps"
+                  detail={`${capped.length} compan${
+                    capped.length === 1 ? 'y is' : 'ies are'
+                  } scoring above the level they are allowed to operate at.`}
+                />
+              )}
+              {portfolio.ops.connectors === 0 && (
+                <Recommendation
+                  icon="hub"
+                  tone="text-outline"
+                  title="Register the first connector"
+                  detail="Nothing can act outside this database until one system is connected, scoped and health-checked."
+                />
+              )}
             </div>
           </Card>
         </div>
@@ -394,15 +448,42 @@ export function Overview({
           </div>
           <div className="flex flex-col">
             <span className="font-body-sm text-body-sm font-semibold text-primary">
-              Governance: every company is at A0 (observe only)
+              {above === 0
+                ? 'Governance: every company is at A0 (observe only)'
+                : `Governance: ${above} compan${
+                    above === 1 ? 'y' : 'ies'
+                  } may draft; none may act unsupervised`}
             </span>
             <span className="font-label-sm text-label-sm text-outline">
-              Your specification caps any company without an accountable human owner, whatever its
-              Brain score. Nothing can act until that is set.
+              {above === 0
+                ? 'Your specification caps any company without an accountable human owner, whatever its Brain score. Nothing can act until that is set.'
+                : 'A1 permits drafting for review. Acting on an external system needs A2, which stays blocked until connectors, thresholds and a tested kill switch exist.'}
             </span>
           </div>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function Recommendation({
+  icon,
+  tone,
+  title,
+  detail,
+}: {
+  icon: string;
+  tone: string;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="p-space-12 rounded-lg bg-surface-container-low flex items-start gap-space-8">
+      <Icon name={icon} className={`${tone} text-[20px] mt-0.5 shrink-0`} />
+      <div className="flex flex-col">
+        <span className="font-body-md text-body-md font-semibold text-on-surface">{title}</span>
+        <span className="font-body-sm text-body-sm text-on-surface-variant">{detail}</span>
+      </div>
     </div>
   );
 }
