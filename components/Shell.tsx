@@ -35,6 +35,16 @@ type NavItem = {
   dot?: boolean;
 };
 
+// Level names from 02_AUTHORITY_POLICY.yaml (observe, draft, routine_execute,
+// threshold_execute, human_only).
+export const LEVEL_LABEL: Record<string, string> = {
+  A0: 'Observe only',
+  A1: 'Draft for review',
+  A2: 'Routine execution',
+  A3: 'Threshold execution',
+  A4: 'Human only',
+};
+
 export function Icon({ name, className = '' }: { name: string; className?: string }) {
   return (
     <span aria-hidden="true" className={`material-symbols-outlined ${className}`}>
@@ -51,6 +61,7 @@ export function Shell({
   companyId,
   onCompanyChange,
   counts,
+  autonomy,
   children,
 }: {
   active: Section;
@@ -60,6 +71,9 @@ export function Shell({
   companyId: string;
   onCompanyChange: (id: string) => void;
   counts: { missions: number; workforce: number; brainModules: number; approvals: number };
+  // Highest authority level any company currently holds, and how many are
+  // above observe-only. Null until the portfolio has been read.
+  autonomy: { level: string; above: number; total: number } | null;
   children: React.ReactNode;
 }) {
   const [navOpen, setNavOpen] = useState(false);
@@ -119,7 +133,7 @@ export function Shell({
       >
         <div className="flex flex-col min-h-0">
           <div className="h-16 px-space-20 flex items-center justify-between border-b border-outline-variant/20 shrink-0">
-            <AyaLogo className="h-8 w-auto shrink-0" />
+            <AyaLogo className="h-10 w-auto shrink-0" />
             <div className="flex items-center gap-space-8">
               <span className="h-2 w-2 rounded-full bg-secondary shrink-0" title="Engine active" />
               <button
@@ -225,15 +239,27 @@ export function Shell({
           </div>
 
           <div className="flex items-center gap-space-12 shrink-0">
-            <div
-              className="hidden xl:flex items-center gap-space-8 px-space-12 py-space-4 rounded-full bg-surface-container-low border border-outline-variant/30"
-              title="No company has been promoted past observe-only yet"
-            >
-              <span className="h-2 w-2 rounded-full bg-outline" />
-              <span className="font-label-sm text-label-sm text-on-surface font-medium whitespace-nowrap">
-                Automation: Observe only (A0)
-              </span>
-            </div>
+            {autonomy && (
+              <div
+                className="hidden xl:flex items-center gap-space-8 px-space-12 py-space-4 rounded-full bg-surface-container-low border border-outline-variant/30"
+                title={
+                  autonomy.above === 0
+                    ? 'No company has been promoted past observe-only yet'
+                    : `${autonomy.above} of ${autonomy.total} companies above observe-only. Highest level held: ${autonomy.level}.`
+                }
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${autonomy.above > 0 ? 'bg-secondary' : 'bg-outline'}`}
+                />
+                <span className="font-label-sm text-label-sm text-on-surface font-medium whitespace-nowrap">
+                  Automation: {LEVEL_LABEL[autonomy.level] ?? autonomy.level} ({autonomy.level})
+                  <span className="text-outline tabular-nums">
+                    {' '}
+                    · {autonomy.above}/{autonomy.total}
+                  </span>
+                </span>
+              </div>
+            )}
             <ThemeToggle />
             <div className="flex items-center gap-space-8">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">

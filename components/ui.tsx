@@ -181,6 +181,45 @@ export function StateChip({ state, label }: { state: string; label: string }) {
   );
 }
 
+// Aya's presence from the brand board: avatar, name and role. The board shows a
+// green "online" dot; it stays grey here until Ask Aya can actually answer, so
+// the badge never claims a capability that is not running.
+export function AyaIntro({ live = false }: { live?: boolean }) {
+  return (
+    <Card className="max-w-3xl relative overflow-hidden">
+      <div
+        aria-hidden="true"
+        className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-gradient-to-br from-brand-blue/25 via-brand-teal/15 to-brand-purple/25 blur-3xl pointer-events-none"
+      />
+      <div className="relative flex items-center gap-space-20">
+        <div className="relative shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/aya-avatar.png"
+            alt="Aya"
+            width={80}
+            height={80}
+            className="h-20 w-20 rounded-full object-cover ring-2 ring-brand-blue/50 shadow-[0_0_24px_rgba(59,130,246,0.35)]"
+          />
+          <span
+            className={`absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full ring-2 ring-surface-container-lowest ${
+              live ? 'bg-brand-teal' : 'bg-outline'
+            }`}
+            title={live ? 'Online' : 'Not connected yet'}
+          />
+        </div>
+        <div className="min-w-0">
+          <h2 className="font-brand text-[28px] leading-tight font-medium text-primary">Aya</h2>
+          <p className="font-body-md text-body-md text-on-surface-variant">Your AI Executive Assistant</p>
+          <p className="font-label-sm text-label-sm text-outline uppercase tracking-[0.2em] mt-space-8">
+            Think • Create • Automate • Evolve
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 // Sections whose engine has not been built yet. Names what is missing and what
 // has to exist first, so the screen is informative rather than a dead end.
 export function ComingSoon({

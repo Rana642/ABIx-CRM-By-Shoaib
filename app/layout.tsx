@@ -1,9 +1,11 @@
 import './globals.css';
 import { THEME_INIT_SCRIPT } from '@/components/ThemeToggle';
 
+// Tab title as it appears on the brand board's usage example. The favicon is
+// app/icon.svg, picked up by Next.js's file convention.
 export const metadata = {
-  title: 'Aya — AI Executive OS',
-  description: 'ABIx Group portfolio command centre',
+  title: 'Aya | ABIx AI OS',
+  description: 'ABIx Group AI Operating System — one vision, multiple businesses, real impact.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -19,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Outfit:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
         <link

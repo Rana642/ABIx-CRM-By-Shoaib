@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="leg" x1="10" y1="56" x2="44" y2="6" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8B5CF6"/>
+      <stop offset="0.55" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#7DD3FC"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="6" y1="44" x2="54" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B82F6" stop-opacity="0.35"/>
+      <stop offset="0.5" stop-color="#00E5D1"/>
+      <stop offset="1" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0B1220"/>
+  <g transform="translate(6 6) scale(0.8125)">
+    <path d="M12 54 L27.5 13 Q31 5 34.5 13 L50 54" stroke="url(#leg)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path d="M7 45 C19 31 37 33 53 46" stroke="url(#ribbon)" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+    <circle cx="55" cy="20" r="5" fill="#00E5D1"/>
+  </g>
+</svg>

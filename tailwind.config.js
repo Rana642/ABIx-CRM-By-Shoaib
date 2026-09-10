@@ -1,7 +1,8 @@
 /** @type {import('tailwindcss').Config} */
-// Design tokens from the Aya Executive OS system (design/stitch_aya_executive_os/
-// executive_operating_system/DESIGN.md). Kept byte-identical to the exported
-// Stitch config so screens ported from it render unchanged.
+// Layout, type scale and role names from the Aya Executive OS Stitch system
+// (design/stitch_aya_executive_os/executive_operating_system/DESIGN.md), so
+// screens ported from it render unchanged. The colour VALUES behind those role
+// names come from the later Aya brand board and live in app/globals.css.
 module.exports = {
   content: ['./app/**/*.{js,ts,jsx,tsx,mdx}', './components/**/*.{js,ts,jsx,tsx,mdx}'],
   darkMode: 'class',
@@ -55,6 +56,12 @@ module.exports = {
         'tertiary-fixed-dim': 'rgb(var(--c-tertiary-fixed-dim) / <alpha-value>)',
         'on-tertiary-fixed': 'rgb(var(--c-on-tertiary-fixed) / <alpha-value>)',
         'on-tertiary-fixed-variant': 'rgb(var(--c-on-tertiary-fixed-variant) / <alpha-value>)',
+        // Fixed brand hues from the Aya brand board, for gradients and the
+        // mark. Not theme tokens: they read the same on either ground.
+        'brand-teal': '#00E5D1',
+        'brand-blue': '#3B82F6',
+        'brand-purple': '#8B5CF6',
+        'brand-ink': '#0B1220',
       },
       borderRadius: {
         DEFAULT: '0.25rem',
@@ -89,6 +96,8 @@ module.exports = {
         'headline-lg': ['Inter'],
         'tabular-dense': ['Inter'],
         'body-sm': ['Inter'],
+        // The brand board's wordmark and headline face.
+        brand: ['Outfit', 'Inter', 'sans-serif'],
       },
       fontSize: {
         'label-sm': ['11px', { lineHeight: '14px', letterSpacing: '0.06em', fontWeight: '600' }],

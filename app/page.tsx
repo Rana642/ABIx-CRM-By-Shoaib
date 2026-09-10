@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Shell, type Section, type Company } from '@/components/Shell';
-import { ComingSoon } from '@/components/ui';
+import { Shell, LEVEL_LABEL, type Section, type Company } from '@/components/Shell';
+import { AyaIntro, ComingSoon } from '@/components/ui';
 import { Overview } from '@/components/screens/Overview';
 import { Businesses } from '@/components/screens/Businesses';
 import { CompanyBrain } from '@/components/screens/CompanyBrain';
@@ -91,6 +91,21 @@ export default function Dashboard() {
   const currentCompany = companies.find((c) => c.id === companyId);
   const companyName = currentCompany?.name ?? 'Loading…';
 
+  // The highest level any company actually holds, so the header and the
+  // "needs first" lists describe today's state rather than the day they were written.
+  const LEVELS = ['A0', 'A1', 'A2', 'A3', 'A4'];
+  const topLevel = launchpad.reduce((top, e) => {
+    const l = e.effective_level ?? 'A0';
+    return LEVELS.indexOf(l) > LEVELS.indexOf(top) ? l : top;
+  }, 'A0');
+  const autonomy = portfolio
+    ? {
+        level: topLevel,
+        above: portfolio.autonomy.companies_above_a0,
+        total: portfolio.companies.total,
+      }
+    : null;
+
   return (
     <Shell
       active={section}
@@ -105,6 +120,7 @@ export default function Dashboard() {
         brainModules: brainSummary?.modules_total ?? 0,
         approvals: portfolio?.ops.approvals_pending ?? 0,
       }}
+      autonomy={autonomy}
     >
       {section === 'overview' && (
         <Overview
@@ -143,17 +159,23 @@ export default function Dashboard() {
       )}
 
       {section === 'ask-aya' && (
-        <ComingSoon
-          icon="psychology"
-          title="Ask Aya"
-          what="The command console — where you issue an instruction in plain language and Aya turns it into a governed mission, assigns agents, and brings the result back for your approval."
-          blockedBy={[
-            'The orchestrator that turns a command into a work order and routes it through the authority policy',
-            'The 12 shared Launchpad sub-workflows in n8n (identity, permissions, approvals, audit, error handling)',
-            'At least one connector, so a mission can act on something outside this database',
-            'A company promoted above A0 — today every company is capped at observe-only',
-          ]}
-        />
+        <div className="flex flex-col gap-space-24">
+          <AyaIntro />
+          <ComingSoon
+            icon="psychology"
+            title="Ask Aya"
+            what="The command console — where you issue an instruction in plain language and Aya turns it into a governed mission, assigns agents, and brings the result back for your approval."
+            blockedBy={[
+              'The orchestrator that turns a command into a work order. The authority policy and the twelve shared components it will call are already built and tested',
+              'At least one connector, so a mission can act on something outside this database',
+              LEVELS.indexOf(topLevel) >= 2
+                ? `A company at ${topLevel} is available — the orchestrator is the remaining piece`
+                : `A company at A2 (routine execution). The highest today is ${topLevel} — ${
+                    LEVEL_LABEL[topLevel]?.toLowerCase() ?? topLevel
+                  }`,
+            ]}
+          />
+        </div>
       )}
 
       {section === 'missions' && (
@@ -162,8 +184,10 @@ export default function Dashboard() {
           title="Missions"
           what="Every piece of work Aya is running or has run, with its stage gates, assigned agents, verification evidence and cost."
           blockedBy={[
-            'The orchestrator — work_orders and tasks exist in the database but nothing writes to them yet',
-            'Agent deployments: all 134 roles are registered, none is deployed to a company',
+            'The orchestrator that dispatches work orders to agents and records each run',
+            `Agent deployments: ${roles.length} roles are registered, ${
+              portfolio?.ops.agent_deployments ?? 0
+            } deployed to a company`,
           ]}
         />
       )}
@@ -174,8 +198,8 @@ export default function Dashboard() {
           title="Approvals"
           what="Your sign-off queue. Anything above an agent's authority ceiling — spend over a threshold, an outbound message, a contract — waits here with its evidence packet."
           blockedBy={[
-            'Nothing can request approval until agents are executing',
-            'Per-company thresholds still need to be set — your specification leaves these as explicit configuration',
+            'An agent executing work. The approval machinery — create, wait, validate, void on any change — is built and tested; nothing is requesting approval yet',
+            'Per-company spend and action thresholds — your specification leaves these as explicit configuration',
           ]}
         />
       )}
@@ -186,7 +210,9 @@ export default function Dashboard() {
           title="Insights & Costs"
           what="What the system is costing you and whether it is paying for itself — cost per task, model usage, and KPI movement per business."
           blockedBy={[
-            'Cost telemetry: agent_runs records cost and tokens per run, but no run has happened',
+            `Cost telemetry: every run records its cost and tokens — ${
+              portfolio?.ops.agent_runs ?? 0
+            } runs recorded so far`,
             'KPI definitions per company — the tables exist and are empty',
           ]}
         />
@@ -221,7 +247,7 @@ export default function Dashboard() {
           what="Your private workspace — health, finances and personal conversations kept separate, where Aya only receives what you explicitly authorize."
           blockedBy={[
             'A separate isolated store, so personal data never sits alongside business records',
-            'The personal assistant build, which is currently paused',
+            'The personal assistant, sequenced after the shared foundation as agreed on 10 September',
           ]}
         />
       )}

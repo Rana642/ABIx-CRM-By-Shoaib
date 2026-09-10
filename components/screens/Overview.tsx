@@ -1,6 +1,7 @@
 'use client';
 
 import { Icon } from '../Shell';
+import { AyaLoader } from '../AyaLogo';
 import { Card, MetricCard, NotConnected, SectionHeader, StateChip, AuthorityBadge } from '../ui';
 import type { Portfolio, Blocker, LaunchpadEntry } from '../types';
 
@@ -22,7 +23,11 @@ export function Overview({
   launchpad: LaunchpadEntry[];
   onNavigate: (s: any) => void;
 }) {
-  if (!portfolio) return <div className="text-outline font-body-sm text-body-sm">Loading…</div>;
+  if (!portfolio) return <AyaLoader label="Reading the portfolio…" />;
+
+  // The viewer's own clock, so the greeting is right wherever Serge is.
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   const decisions = portfolio.decisions;
   const withBrain = launchpad.filter((e) => e.modules_total > 0);
@@ -57,7 +62,7 @@ export function Overview({
             </span>
           </div>
           <h1 className="font-headline-lg-mobile text-headline-lg-mobile md:font-display md:text-display text-primary mt-space-4 text-balance">
-            Good morning, Serge.
+            {greeting}, Serge.
           </h1>
           <p className="font-body-lg text-body-lg text-on-surface-variant">
             {decisions.total === 0
