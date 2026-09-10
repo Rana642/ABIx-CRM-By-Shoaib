@@ -27,7 +27,8 @@ export function Overview({
 
   // The viewer's own clock, so the greeting is right wherever Serge is.
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const greeting =
+    hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 18 ? 'Good afternoon' : 'Good evening';
 
   const decisions = portfolio.decisions;
   const withBrain = launchpad.filter((e) => e.modules_total > 0);

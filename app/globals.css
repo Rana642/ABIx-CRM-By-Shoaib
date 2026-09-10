@@ -132,10 +132,14 @@
   .dark { color-scheme: dark; }
 }
 
-/* Google's stylesheet defines this class too, but declaring it here means a
-   blocked or slow font never leaves ligature names ("grid_view", "gavel")
-   sitting in the layout as visible text. */
+/* Icons are ligatures: until the font arrives, the browser draws the name
+   ("grid_view", "gavel") in a fallback face, which is wide enough to wreck the
+   layout. Two guards: every icon is exactly one em wide and clips, so the
+   name can never push anything; and it stays transparent until layout.tsx
+   confirms the font has loaded, so the name is never seen at all. */
 .material-symbols-outlined {
+  width: 1em;
+  overflow: hidden;
   font-family: 'Material Symbols Outlined', sans-serif;
   font-weight: normal;
   font-style: normal;
@@ -152,6 +156,9 @@
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   user-select: none;
   flex-shrink: 0;
+}
+html:not(.icons-ready) .material-symbols-outlined {
+  color: transparent !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
