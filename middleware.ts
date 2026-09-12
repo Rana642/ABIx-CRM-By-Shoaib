@@ -52,7 +52,11 @@ export async function middleware(req: NextRequest) {
       const name = decoded.slice(0, sep);
       const expected = users.get(name);
       if (expected && (await sha256Hex(decoded.slice(sep + 1))) === expected) {
-        return NextResponse.next();
+        // Tell the API who is signed in. Set here, after the password check,
+        // so a browser-supplied value is always overwritten.
+        const headers = new Headers(req.headers);
+        headers.set('x-console-user', name);
+        return NextResponse.next({ request: { headers } });
       }
     }
   }

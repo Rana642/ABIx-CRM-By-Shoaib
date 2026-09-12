@@ -8,6 +8,7 @@ export type Section =
   | 'overview'
   | 'ask-aya'
   | 'businesses'
+  | 'onboarding'
   | 'sales-and-customers'
   | 'missions'
   | 'workforce'
@@ -96,6 +97,7 @@ export function Shell({
     { key: 'overview', label: 'Overview', icon: 'grid_view' },
     { key: 'ask-aya', label: 'Ask Aya', icon: 'psychology', badge: 'Cmd+K', badgeTone: 'accent' },
     { key: 'businesses', label: 'Businesses', icon: 'domain' },
+    { key: 'onboarding', label: 'Onboarding', icon: 'assignment' },
     { key: 'sales-and-customers', label: 'Sales & Customers', icon: 'vital_signs' },
     { key: 'missions', label: 'Missions', icon: 'task_alt', badge: counts.missions },
     { key: 'workforce', label: 'Workforce', icon: 'smart_toy', badge: counts.workforce },

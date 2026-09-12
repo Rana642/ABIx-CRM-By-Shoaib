@@ -8,6 +8,7 @@ import { Businesses } from '@/components/screens/Businesses';
 import { CompanyBrain } from '@/components/screens/CompanyBrain';
 import { Workforce } from '@/components/screens/Workforce';
 import { SalesCustomers } from '@/components/screens/SalesCustomers';
+import { Onboarding } from '@/components/screens/Onboarding';
 import type {
   Portfolio,
   Blocker,
@@ -37,6 +38,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  // Bumped when the onboarding record changes the Brain, so its screen re-reads.
+  const [brainTick, setBrainTick] = useState(0);
 
   useEffect(() => {
     fetch('/api/companies')
@@ -66,6 +69,10 @@ export default function Dashboard() {
         setModules(d.modules ?? []);
         setBrainSummary(d.summary ?? null);
       });
+  }, [companyId, brainTick]);
+
+  useEffect(() => {
+    if (!companyId) return;
     Promise.all([
       fetch(`/api/stats?company_id=${companyId}`).then((r) => r.json()),
       fetch(`/api/leads?company_id=${companyId}`).then((r) => r.json()),
@@ -139,6 +146,14 @@ export default function Dashboard() {
             setCompanyId(id);
             setSection('company-brain');
           }}
+        />
+      )}
+
+      {section === 'onboarding' && companyId && (
+        <Onboarding
+          companyId={companyId}
+          companyName={companyName}
+          onBrainChanged={() => setBrainTick((t) => t + 1)}
         />
       )}
 
