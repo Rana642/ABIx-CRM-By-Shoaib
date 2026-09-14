@@ -35,6 +35,8 @@ type IntakeField = {
   module_name: string;
   default_visibility: Visibility;
   added_by_aya: boolean;
+  // Technical fields are prepared by the technical team for the owner to confirm.
+  answered_by: 'owner' | 'technical';
 };
 
 type Snapshot = {
@@ -415,6 +417,14 @@ export function Onboarding({
             companyId={companyId}
             canApprove={canApprove}
             onSave={saveField}
+            onApproveSection={async () => {
+              const res = await post({ action: 'approve_section', section_code: sectionCode, include_drafts: true });
+              if (!res.ok) return res.error;
+              await load();
+              if (data.settings.drives_brain) onBrainChanged();
+              setToast(`${res.data.approved_count} fields approved`);
+              return null;
+            }}
             onMarkSection={async (note) => {
               const res = await post({ action: 'mark_section', section_code: sectionCode, note });
               if (!res.ok) return res.error;
@@ -686,6 +696,7 @@ function SectionPanel({
   canApprove,
   onSave,
   onMarkSection,
+  onApproveSection,
 }: {
   section: IntakeSection;
   fields: IntakeField[];
@@ -696,10 +707,14 @@ function SectionPanel({
   canApprove: boolean;
   onSave: (payload: Record<string, unknown>) => Promise<string | null>;
   onMarkSection: (note: string) => Promise<string | null>;
+  onApproveSection: () => Promise<string | null>;
 }) {
   const [naNote, setNaNote] = useState('');
   const [naOpen, setNaOpen] = useState(false);
   const [naError, setNaError] = useState<string | null>(null);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [approveBusy, setApproveBusy] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
 
   const modules = Array.from(new Map(fields.map((f) => [f.brain_module_code, f.module_name])).entries());
   const shown = fields.filter((f) => {
@@ -709,6 +724,12 @@ function SectionPanel({
     return true;
   });
   const missingCount = fields.filter((f) => (byField.get(f.field_code)?.status ?? 'missing') === 'missing').length;
+  // Answered fields not yet approved — what one "approve this section" covers.
+  const readyCount = fields.filter((f) => {
+    const r = byField.get(f.field_code);
+    const answered = !!(r?.value_text || (r?.value_rows && r.value_rows.length));
+    return answered && (r?.status === 'draft' || r?.status === 'under_review');
+  }).length;
 
   return (
     <div className="flex flex-col gap-space-16 min-w-0">
@@ -754,6 +775,52 @@ function SectionPanel({
             </span>
           ))}
         </div>
+        {canApprove && readyCount > 0 && (
+          <div className="border-t border-outline-variant/30 pt-space-12 flex flex-col gap-space-8">
+            {approveOpen ? (
+              <>
+                <p className="font-body-sm text-body-sm text-on-surface max-w-[72ch]">
+                  Approve the {readyCount} answered field{readyCount === 1 ? '' : 's'} in this section that{' '}
+                  {readyCount === 1 ? 'is' : 'are'} in draft or under review? Each keeps its source; fields with no
+                  answer are left as they are.
+                </p>
+                {approveError && <p className="font-body-sm text-body-sm text-error">{approveError}</p>}
+                <div className="flex gap-space-8">
+                  <button
+                    type="button"
+                    disabled={approveBusy}
+                    onClick={async () => {
+                      setApproveBusy(true);
+                      setApproveError(null);
+                      const err = await onApproveSection();
+                      setApproveBusy(false);
+                      if (err) setApproveError(err);
+                      else setApproveOpen(false);
+                    }}
+                    className="px-space-12 py-space-8 rounded-lg bg-secondary text-on-secondary font-body-sm text-body-sm font-semibold disabled:opacity-60"
+                  >
+                    {approveBusy ? 'Approving…' : `Approve ${readyCount}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setApproveOpen(false)}
+                    className="px-space-12 py-space-8 rounded-lg text-on-surface-variant hover:bg-surface-container-high font-body-sm text-body-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setApproveOpen(true)}
+                className="self-start font-body-sm text-body-sm text-secondary font-semibold hover:underline"
+              >
+                Approve everything answered in this section ({readyCount})
+              </button>
+            )}
+          </div>
+        )}
         {section.kind === 'supplement' && missingCount > 0 && (
           <div className="border-t border-outline-variant/30 pt-space-12">
             {naOpen ? (
@@ -941,6 +1008,14 @@ function FieldEditor({
           {field.hint && <p className="font-body-sm text-body-sm text-on-surface-variant">{field.hint}</p>}
         </div>
         <div className="flex items-center gap-space-8 shrink-0">
+          {field.answered_by === 'technical' && (
+            <span
+              className="font-label-sm text-label-sm px-space-8 py-0.5 rounded bg-surface-container text-on-surface-variant font-semibold"
+              title="The technical team prepares this from the running system; the owner confirms it"
+            >
+              Technical team
+            </span>
+          )}
           {field.added_by_aya && (
             <span
               className="font-label-sm text-label-sm px-space-8 py-0.5 rounded bg-surface-container text-secondary font-semibold"

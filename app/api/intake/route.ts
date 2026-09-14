@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
     pool.query(
       `SELECT f.field_code, f.section_code, f.seq, f.label, f.hint, f.input_kind, f.choices,
               f.columns, f.seed_rows, f.brain_module_code, t.module_name,
-              f.default_visibility, f.added_by_aya
+              f.default_visibility, f.added_by_aya, f.answered_by
        FROM abix.intake_fields f
        JOIN abix.intake_sections s ON s.section_code = f.section_code
        JOIN abix.brain_module_templates t ON t.module_code = f.brain_module_code
@@ -132,6 +132,20 @@ export async function POST(req: NextRequest) {
         }),
       ]);
       return NextResponse.json({ marked: rows[0].n });
+    }
+
+    if (body.action === 'approve_section') {
+      // One approval for every answered field of a section (owner only).
+      const { rows } = await pool.query('SELECT abix.fn_intake_approve_bulk($1::jsonb) AS r', [
+        JSON.stringify({
+          company_id: body.company_id,
+          section_code: body.section_code,
+          include_drafts: body.include_drafts !== false,
+          actor,
+          via: 'the console',
+        }),
+      ]);
+      return NextResponse.json(rows[0].r);
     }
 
     if (body.action === 'publish') {
