@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { checkConsolePassword, consoleUsers } from './lib/consoleAuth';
 
 // Login for the console, enforced by the app itself.
 //
@@ -20,22 +21,23 @@ const CHALLENGE = {
   headers: { 'WWW-Authenticate': 'Basic realm="Aya Console", charset="UTF-8"' },
 };
 
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
+// The MCP connector's endpoints carry their own authentication — the OAuth
+// discovery documents, the sign-in form, the token exchange, and the MCP
+// server's bearer tokens — so the console login does not apply to them.
+const OWN_AUTH_EXACT = ['/mcp', '/api/mcp'];
+const OWN_AUTH_PREFIXES = ['/.well-known/oauth-', '/.well-known/openid-configuration', '/oauth/', '/api/oauth/'];
 
 export async function middleware(req: NextRequest) {
-  const users = new Map(
-    (process.env.CONSOLE_USERS ?? '')
-      .split(',')
-      .map((pair) => pair.trim().split(':'))
-      .filter((p) => p.length === 2 && p[0] && p[1])
-      .map(([name, hash]) => [name, hash.toLowerCase()] as const)
-  );
-  if (users.size === 0) {
+  // Who is signed in is only ever set here, never taken from the browser.
+  const headers = new Headers(req.headers);
+  headers.delete('x-console-user');
+
+  const path = req.nextUrl.pathname;
+  if (OWN_AUTH_EXACT.includes(path) || OWN_AUTH_PREFIXES.some((p) => path.startsWith(p))) {
+    return NextResponse.next({ request: { headers } });
+  }
+
+  if (consoleUsers().size === 0) {
     return new NextResponse('Console login is not configured.', { status: 503 });
   }
 
@@ -50,11 +52,8 @@ export async function middleware(req: NextRequest) {
     const sep = decoded.indexOf(':');
     if (sep > 0) {
       const name = decoded.slice(0, sep);
-      const expected = users.get(name);
-      if (expected && (await sha256Hex(decoded.slice(sep + 1))) === expected) {
-        // Tell the API who is signed in. Set here, after the password check,
-        // so a browser-supplied value is always overwritten.
-        const headers = new Headers(req.headers);
+      if (await checkConsolePassword(name, decoded.slice(sep + 1))) {
+        // Tell the API who is signed in.
         headers.set('x-console-user', name);
         return NextResponse.next({ request: { headers } });
       }
