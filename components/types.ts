@@ -65,6 +65,15 @@ export type Portfolio = {
     companies_measured: number;
     verified_actions: number;
   };
+  ai_usage:
+    | {
+        available: true;
+        month_cost_usd: number;
+        month_tokens: number;
+        month_customer_messages: number;
+        synced_at: string;
+      }
+    | { available: false };
   unavailable: { revenue: string; ai_spend: string; missions: string; connectors: string };
 };
 

@@ -4,6 +4,7 @@ import { Icon } from '../Shell';
 import { AyaLoader } from '../AyaLogo';
 import { Card, MetricCard, NotConnected, SectionHeader, StateChip, AuthorityBadge } from '../ui';
 import type { Portfolio, Blocker, LaunchpadEntry } from '../types';
+import { formatCompact, formatUsd } from '../format';
 
 const STAGE_LABEL: Record<string, string> = {
   not_started: 'Not started',
@@ -159,11 +160,34 @@ export function Overview({
           }
           progress={(above / Math.max(1, portfolio.companies.total)) * 100}
         />
-        <NotConnected
-          label="AI & tool spend"
-          icon="price_check"
-          reason={portfolio.unavailable.ai_spend}
-        />
+        {portfolio.ai_usage?.available ? (
+          <MetricCard
+            label="AI spend this month"
+            icon="price_check"
+            value={formatUsd(portfolio.ai_usage.month_cost_usd)}
+            sub={
+              <span className="font-body-sm text-body-sm text-outline">
+                {formatCompact(portfolio.ai_usage.month_tokens)} tokens ·{' '}
+                {portfolio.ai_usage.month_customer_messages} customer messages
+              </span>
+            }
+            footer={
+              <button
+                type="button"
+                onClick={() => onNavigate('insights-and-costs')}
+                className="font-label-sm text-label-sm text-secondary uppercase font-semibold hover:underline"
+              >
+                See usage
+              </button>
+            }
+          />
+        ) : (
+          <NotConnected
+            label="AI & tool spend"
+            icon="price_check"
+            reason={portfolio.unavailable.ai_spend}
+          />
+        )}
       </div>
 
       {/* Briefing quadrants */}

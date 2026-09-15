@@ -56,6 +56,13 @@
     --c-tertiary-fixed-dim: 196 181 253;
     --c-on-tertiary-fixed: 46 16 101;
     --c-on-tertiary-fixed-variant: 91 33 182;
+    /* Chart series, in fixed order (1 customer, 2 tests, 3 internal). Checked
+       with the dataviz palette validator against the card surface in each
+       theme: colour-blind separation and contrast pass. Slot 3 is under 3:1 on
+       white, so charts using it keep a legend and a table view. */
+    --c-viz-1: 42 120 214;
+    --c-viz-2: 235 104 52;
+    --c-viz-3: 27 175 122;
   }
 
   /* The board is dark-first: these are its own values -- Dark Background
@@ -109,6 +116,9 @@
     --c-tertiary-fixed-dim: 196 181 253;
     --c-on-tertiary-fixed: 46 16 101;
     --c-on-tertiary-fixed-variant: 91 33 182;
+    --c-viz-1: 57 135 229;
+    --c-viz-2: 217 89 38;
+    --c-viz-3: 25 158 112;
   }
 
   html, body {

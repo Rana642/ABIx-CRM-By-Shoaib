@@ -9,6 +9,7 @@ import { CompanyBrain } from '@/components/screens/CompanyBrain';
 import { Workforce } from '@/components/screens/Workforce';
 import { SalesCustomers } from '@/components/screens/SalesCustomers';
 import { Onboarding } from '@/components/screens/Onboarding';
+import { Insights } from '@/components/screens/Insights';
 import type {
   Portfolio,
   Blocker,
@@ -40,6 +41,17 @@ export default function Dashboard() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   // Bumped when the onboarding record changes the Brain, so its screen re-reads.
   const [brainTick, setBrainTick] = useState(0);
+
+  // Deep links such as /?section=insights-and-costs open that section directly.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('section');
+    const known: Section[] = [
+      'overview', 'ask-aya', 'businesses', 'onboarding', 'sales-and-customers', 'missions',
+      'workforce', 'company-brain', 'approvals', 'insights-and-costs', 'connectors', 'settings',
+      'personal',
+    ];
+    if (wanted && (known as string[]).includes(wanted)) setSection(wanted as Section);
+  }, []);
 
   useEffect(() => {
     fetch('/api/companies')
@@ -219,19 +231,7 @@ export default function Dashboard() {
         />
       )}
 
-      {section === 'insights-and-costs' && (
-        <ComingSoon
-          icon="monitoring"
-          title="Insights & Costs"
-          what="What the system is costing you and whether it is paying for itself — cost per task, model usage, and KPI movement per business."
-          blockedBy={[
-            `Cost telemetry: every run records its cost and tokens — ${
-              portfolio?.ops.agent_runs ?? 0
-            } runs recorded so far`,
-            'KPI definitions per company — the tables exist and are empty',
-          ]}
-        />
-      )}
+      {section === 'insights-and-costs' && <Insights />}
 
       {section === 'connectors' && (
         <ComingSoon

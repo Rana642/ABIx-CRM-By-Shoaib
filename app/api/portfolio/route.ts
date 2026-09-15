@@ -62,6 +62,22 @@ export async function GET() {
     `),
   ]);
 
+  // Model usage this calendar month (Paris), from the collector's copy of n8n's
+  // run records. Kept out of Promise.all: if the usage tables are not installed
+  // the rest of the overview must still load.
+  const aiUsage = await pool
+    .query(`
+      SELECT coalesce(sum(v.est_cost_usd), 0)::float8 AS month_cost_usd,
+             coalesce(sum(v.total_tokens), 0)::float8 AS month_tokens,
+             (count(DISTINCT v.n8n_execution_id) FILTER (WHERE v.purpose = 'customer'))::int
+                                                     AS month_customer_messages,
+             (SELECT last_run_at FROM abix.ai_usage_sync WHERE source = 'n8n') AS synced_at
+      FROM abix.v_ai_model_calls_costed v
+      WHERE v.day_paris >= date_trunc('month', now() AT TIME ZONE 'Europe/Paris')::date
+    `)
+    .then((r) => r.rows[0])
+    .catch(() => null);
+
   const c = companies.rows[0];
   const b = brains.rows[0];
   const k = blockers.rows[0];
@@ -86,10 +102,14 @@ export async function GET() {
       companies_measured: b.companies_with_brain,
       verified_actions: o.agent_runs,
     },
+    ai_usage:
+      aiUsage && aiUsage.synced_at
+        ? { available: true, ...aiUsage }
+        : { available: false },
     // Surfaces the design shows but no source is connected for yet.
     unavailable: {
       revenue: 'No finance connector. Invoicing is handled in Zoho, not yet integrated.',
-      ai_spend: 'No cost telemetry. agent_runs is empty, so cost per task is unmeasured.',
+      ai_spend: 'Usage tracking has not collected anything yet.',
       missions: 'No orchestrator. work_orders is empty; nothing dispatches work yet.',
       connectors: 'No connector has been registered or health-checked.',
     },

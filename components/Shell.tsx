@@ -46,9 +46,17 @@ export const LEVEL_LABEL: Record<string, string> = {
   A4: 'Human only',
 };
 
-export function Icon({ name, className = '' }: { name: string; className?: string }) {
+export function Icon({
+  name,
+  className = '',
+  style,
+}: {
+  name: string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   return (
-    <span aria-hidden="true" className={`material-symbols-outlined ${className}`}>
+    <span aria-hidden="true" className={`material-symbols-outlined ${className}`} style={style}>
       {name}
     </span>
   );
