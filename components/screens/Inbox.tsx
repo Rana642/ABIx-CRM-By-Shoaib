@@ -39,6 +39,22 @@ type Business = { slug: string; name: string };
 
 const POLL_MS = 5000;
 
+// Who the customer is told they are now speaking to, by the business the menu routed them to.
+const TEAM: Record<string, string> = {
+  clif: 'the Come Live in France team',
+  'abix-properties': "Serge's property team",
+  'abix-portfolio-office': 'the ABIx Group team',
+  'serge-abi-personal-brand': "Serge Abi's team",
+};
+
+function introFor(c: Conversation, meName: string) {
+  const first = (c.customer_name ?? '').trim().split(/\s+/)[0];
+  const me = meName.trim().split(/\s+/)[0] || meName;
+  const team = TEAM[c.company_slug ?? ''] ?? "Serge Abi's team";
+  return `Hi${first ? ' ' + first : ''}, this is ${me} from ${team}, a real person taking over from Aya. ` +
+    'Give me 3–5 minutes to read through our conversation, so you won’t need to repeat anything.';
+}
+
 function when(iso: string) {
   const d = new Date(iso);
   const today = new Date();
@@ -52,7 +68,7 @@ function who(c: Conversation) {
   return c.customer_name || `+${c.phone}`;
 }
 
-async function post(body: object): Promise<{ error?: string }> {
+async function post(body: object): Promise<{ error?: string; warning?: string }> {
   const r = await fetch('/api/inbox', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -63,6 +79,9 @@ async function post(body: object): Promise<{ error?: string }> {
 
 export function Inbox() {
   const [me, setMe] = useState('');
+  const [meName, setMeName] = useState('');
+  // The message sent when taking over; null while the take-over panel is closed.
+  const [intro, setIntro] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [pauses, setPauses] = useState<Pause[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -77,6 +96,7 @@ export function Inbox() {
   const loadList = useCallback(async () => {
     const d = await fetch('/api/inbox').then((r) => r.json());
     setMe(d.me ?? '');
+    setMeName(d.me_name ?? d.me ?? '');
     setConversations(d.conversations ?? []);
     setPauses(d.pauses ?? []);
     setBusinesses(d.businesses ?? []);
@@ -105,6 +125,9 @@ export function Inbox() {
     endRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length]);
 
+  // A take-over message belongs to one conversation: opening another closes the panel.
+  useEffect(() => setIntro(null), [openId]);
+
   const open = conversations.find((c) => c.conversation_id === openId) ?? null;
   const mine = !!open && open.handled_by === 'person' && open.handler_name === me;
 
@@ -117,6 +140,7 @@ export function Inbox() {
       setError(r.error);
       return;
     }
+    if (r.warning) setError(r.warning);
     after?.();
     await loadList();
     if (openId) await loadMessages(openId);
@@ -291,8 +315,8 @@ export function Inbox() {
                 {open.handled_by === 'agent' ? (
                   <button
                     type="button"
-                    disabled={busy || open.status === 'closed'}
-                    onClick={() => act({ action: 'take', conversation_id: open.conversation_id })}
+                    disabled={busy || open.status === 'closed' || intro !== null}
+                    onClick={() => setIntro(introFor(open, meName))}
                     className="px-space-12 py-space-8 rounded-lg font-body-sm text-body-sm font-semibold bg-primary-container text-on-primary hover:opacity-90 disabled:opacity-50"
                   >
                     Take over
@@ -310,6 +334,52 @@ export function Inbox() {
                   <span className="font-body-sm text-body-sm text-on-surface-variant">{open.handler_name} is handling this</span>
                 )}
               </div>
+
+              {intro !== null && open.handled_by === 'agent' && (
+                <div className="px-space-16 py-space-12 border-b border-surface-container flex flex-col gap-space-8 bg-secondary-container/30">
+                  <label htmlFor="takeover-intro" className="font-label-md text-label-md text-on-surface-variant">
+                    Message to {who(open)} when you take over
+                  </label>
+                  <textarea
+                    id="takeover-intro"
+                    rows={3}
+                    value={intro}
+                    onChange={(e) => setIntro(e.target.value)}
+                    disabled={!open.window_open}
+                    className="w-full resize-y bg-surface-container-lowest text-on-surface font-body-md text-body-md rounded-lg px-space-12 py-space-8 border border-outline-variant disabled:opacity-50"
+                  />
+                  {!open.window_open && (
+                    <span className="font-body-sm text-body-sm text-error">
+                      The customer’s last message is more than 24 hours old, so WhatsApp will not deliver this. You can still take over.
+                    </span>
+                  )}
+                  <div className="flex flex-wrap gap-space-8">
+                    <button
+                      type="button"
+                      disabled={busy || !open.window_open || !intro.trim()}
+                      onClick={() => act({ action: 'take', conversation_id: open.conversation_id, intro }, () => setIntro(null))}
+                      className="px-space-12 py-space-8 rounded-lg font-body-sm text-body-sm font-semibold bg-primary-container text-on-primary hover:opacity-90 disabled:opacity-50"
+                    >
+                      Take over &amp; send
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => act({ action: 'take', conversation_id: open.conversation_id }, () => setIntro(null))}
+                      className="px-space-12 py-space-8 rounded-lg font-body-sm text-body-sm font-semibold border border-outline-variant text-on-surface hover:bg-surface-container-high disabled:opacity-50"
+                    >
+                      Take over without a message
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIntro(null)}
+                      className="px-space-12 py-space-8 rounded-lg font-body-sm text-body-sm text-on-surface-variant hover:bg-surface-container-high"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="flex-1 overflow-y-auto px-space-16 py-space-16 flex flex-col gap-space-8 bg-surface-container-low/50">
                 {messages.map((m) =>

@@ -15,6 +15,28 @@ function actorOf(req: NextRequest): string {
   return req.headers.get('x-console-user') ?? '';
 }
 
+type SendTarget = { conversation_id: string; line: string; phone: string };
+
+// Sends a WhatsApp text through AYA_Inbox_Send and logs it as the person's message.
+// Returns an error sentence, or null when it went out.
+async function sendAsPerson(c: SendTarget, text: string, actor: string): Promise<string | null> {
+  if (!process.env.INBOX_SEND_SECRET) return 'Sending from the console is not configured yet.';
+  const res = await fetch(SEND_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Aya-Inbox-Secret': process.env.INBOX_SEND_SECRET },
+    body: JSON.stringify({ line: c.line, to: c.phone, text }),
+  });
+  const sent = await res.json().catch(() => ({ ok: false, error: `The sending service answered ${res.status}.` }));
+  if (!sent.ok) return sent.error ?? 'WhatsApp did not accept the message.';
+  await pool.query('SELECT abix.fn_message_log($1::jsonb)', [
+    JSON.stringify({
+      conversation_id: c.conversation_id, direction: 'out', sender: 'person', sender_name: actor,
+      kind: 'text', body: text, wa_message_id: sent.wa_message_id,
+    }),
+  ]);
+  return null;
+}
+
 // Database errors meant for the person carry a CODE: prefix; show the sentence after it.
 function friendly(message: string): string {
   const m = /^[A-Z_]+: ([\s\S]+)$/.exec(message);
@@ -35,7 +57,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ messages: rows });
   }
 
-  const [conversations, pauses, businesses] = await Promise.all([
+  const [conversations, pauses, businesses, meRow] = await Promise.all([
     pool.query(
       `SELECT w.conversation_id, w.channel_phone_number_id AS line, w.customer_phone AS phone,
               w.customer_name, w.status, w.handled_by, w.handler_name, w.started_at, w.last_inbound_at,
@@ -62,9 +84,12 @@ export async function GET(req: NextRequest) {
        WHERE slug IN ('clif', 'abix-properties', 'abix-portfolio-office', 'serge-abi-personal-brand')
        ORDER BY name`
     ),
+    // The name the customer sees when this person takes a conversation over.
+    pool.query('SELECT display_name FROM abix.console_users WHERE username = $1', [actorOf(req)]),
   ]);
   return NextResponse.json({
     me: actorOf(req),
+    me_name: meRow.rows[0]?.display_name ?? actorOf(req).split('@')[0],
     conversations: conversations.rows,
     pauses: pauses.rows,
     businesses: businesses.rows,
@@ -83,7 +108,29 @@ export async function POST(req: NextRequest) {
         const { rows } = await pool.query('SELECT abix.fn_conversation_handle($1::jsonb) AS c', [
           JSON.stringify({ conversation_id: body.conversation_id, action: body.action, by: actor }),
         ]);
-        return NextResponse.json({ conversation: rows[0].c });
+        const c = rows[0].c;
+        // Taking over can tell the customer a person from the team is now here, so they do not
+        // repeat themselves. Only within WhatsApp's 24-hour window.
+        const intro = body.action === 'take' ? String(body.intro ?? '').trim() : '';
+        if (intro) {
+          const open = await pool.query(
+            `SELECT last_inbound_at > now() - interval '24 hours' AS open FROM abix.whatsapp_conversations
+             WHERE conversation_id = $1`,
+            [c.conversation_id]
+          );
+          if (!open.rows[0]?.open) {
+            return NextResponse.json({
+              conversation: c,
+              warning: 'Taken over. The message was not sent: the customer’s last message is more than 24 hours old.',
+            });
+          }
+          const err = await sendAsPerson(
+            { conversation_id: c.conversation_id, line: c.channel_phone_number_id, phone: c.customer_phone },
+            intro, actor
+          );
+          if (err) return NextResponse.json({ conversation: c, warning: `Taken over, but the message was not sent: ${err}` });
+        }
+        return NextResponse.json({ conversation: c });
       }
 
       case 'pause':
@@ -122,22 +169,8 @@ export async function POST(req: NextRequest) {
             { status: 409 }
           );
         }
-        if (!process.env.INBOX_SEND_SECRET) {
-          return NextResponse.json({ error: 'Sending from the console is not configured yet.' }, { status: 503 });
-        }
-        const res = await fetch(SEND_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Aya-Inbox-Secret': process.env.INBOX_SEND_SECRET },
-          body: JSON.stringify({ line: c.line, to: c.phone, text }),
-        });
-        const sent = await res.json().catch(() => ({ ok: false, error: `The sending service answered ${res.status}.` }));
-        if (!sent.ok) return NextResponse.json({ error: sent.error ?? 'WhatsApp did not accept the message.' }, { status: 502 });
-        await pool.query('SELECT abix.fn_message_log($1::jsonb)', [
-          JSON.stringify({
-            conversation_id: c.conversation_id, direction: 'out', sender: 'person', sender_name: actor,
-            kind: 'text', body: text, wa_message_id: sent.wa_message_id,
-          }),
-        ]);
+        const err = await sendAsPerson(c, text, actor);
+        if (err) return NextResponse.json({ error: err }, { status: 502 });
         return NextResponse.json({ ok: true });
       }
 
