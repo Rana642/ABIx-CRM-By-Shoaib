@@ -11,6 +11,7 @@ import { SalesCustomers } from '@/components/screens/SalesCustomers';
 import { Onboarding } from '@/components/screens/Onboarding';
 import { Insights } from '@/components/screens/Insights';
 import { Inbox } from '@/components/screens/Inbox';
+import { Settings } from '@/components/screens/Settings';
 import type {
   Portfolio,
   Blocker,
@@ -247,16 +248,7 @@ export default function Dashboard() {
         />
       )}
 
-      {section === 'settings' && (
-        <ComingSoon
-          icon="settings"
-          title="Settings"
-          what="Approvers, thresholds, reporting cadence, retention periods and kill switches."
-          blockedBy={[
-            'These are the configuration decisions your Operating Pack deliberately leaves open — they need your input per business',
-          ]}
-        />
-      )}
+      {section === 'settings' && <Settings />}
 
       {section === 'personal' && (
         <ComingSoon

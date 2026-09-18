@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { pool } from '@/lib/db';
-import { checkConsolePassword } from '@/lib/consoleAuth';
+import { verifyLogin } from '@/lib/logins';
 import { BASE_URL, MCP_RESOURCE, SCOPE, findClient, issueCode, type OAuthClient } from '@/lib/oauth';
 
 export const dynamic = 'force-dynamic';
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
   const username = String(data.get('username') ?? '').trim();
   const password = String(data.get('password') ?? '');
   const known = await pool.query('SELECT 1 FROM abix.console_users WHERE username = $1', [username]);
-  if (known.rowCount !== 1 || !(await checkConsolePassword(username, password))) {
+  if (known.rowCount !== 1 || !(await verifyLogin(username, password))) {
     // A pause on every failure keeps guessing slow.
     await new Promise((r) => setTimeout(r, 800));
     return form(p, client!, 'That username and password did not match.', username);
