@@ -10,6 +10,7 @@ import { Workforce } from '@/components/screens/Workforce';
 import { SalesCustomers } from '@/components/screens/SalesCustomers';
 import { Onboarding } from '@/components/screens/Onboarding';
 import { Insights } from '@/components/screens/Insights';
+import { Inbox } from '@/components/screens/Inbox';
 import type {
   Portfolio,
   Blocker,
@@ -46,7 +47,7 @@ export default function Dashboard() {
   useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get('section');
     const known: Section[] = [
-      'overview', 'ask-aya', 'businesses', 'onboarding', 'sales-and-customers', 'missions',
+      'overview', 'ask-aya', 'businesses', 'onboarding', 'sales-and-customers', 'inbox', 'missions',
       'workforce', 'company-brain', 'approvals', 'insights-and-costs', 'connectors', 'settings',
       'personal',
     ];
@@ -232,6 +233,8 @@ export default function Dashboard() {
       )}
 
       {section === 'insights-and-costs' && <Insights />}
+
+      {section === 'inbox' && <Inbox />}
 
       {section === 'connectors' && (
         <ComingSoon

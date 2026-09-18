@@ -10,6 +10,7 @@ export type Section =
   | 'businesses'
   | 'onboarding'
   | 'sales-and-customers'
+  | 'inbox'
   | 'missions'
   | 'workforce'
   | 'company-brain'
@@ -107,6 +108,7 @@ export function Shell({
     { key: 'businesses', label: 'Businesses', icon: 'domain' },
     { key: 'onboarding', label: 'Onboarding', icon: 'assignment' },
     { key: 'sales-and-customers', label: 'Sales & Customers', icon: 'vital_signs' },
+    { key: 'inbox', label: 'Inbox', icon: 'forum' },
     { key: 'missions', label: 'Missions', icon: 'task_alt', badge: counts.missions },
     { key: 'workforce', label: 'Workforce', icon: 'smart_toy', badge: counts.workforce },
     { key: 'company-brain', label: 'Company Brain', icon: 'neurology', badge: counts.brainModules },
