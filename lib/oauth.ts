@@ -100,6 +100,8 @@ export async function userFromBearer(req: Request): Promise<{ user: TokenUser | 
        FROM abix.console_users u
       WHERE t.token_hash = $1 AND t.kind = 'access' AND t.revoked_at IS NULL
         AND t.expires_at > now() AND u.username = t.username
+        -- Suspended, revoked or expired people lose connector access at once (Users & Access).
+        AND u.status = 'active' AND (u.access_expires_at IS NULL OR u.access_expires_at > now())
       RETURNING u.username, u.display_name, u.can_approve`,
     [sha256(m[1])]
   );

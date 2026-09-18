@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { actorOf, guarded, requireAccess } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('company_id');
   if (!companyId) {
     return NextResponse.json({ error: 'company_id is required' }, { status: 400 });
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(rows);
 }
 
-export async function PATCH(req: NextRequest) {
+async function patchHandler(req: NextRequest) {
   const body = await req.json();
   const { id, pipeline_stage } = body;
   if (!id || !pipeline_stage) {
@@ -33,3 +34,16 @@ export async function PATCH(req: NextRequest) {
   );
   return NextResponse.json(rows[0] ?? {});
 }
+
+// Only for a workspace the person may see (Users & Access).
+export const GET = guarded(async (req: NextRequest) => {
+  await requireAccess(actorOf(req), 'workspace.view', req.nextUrl.searchParams.get('company_id'), 'leads');
+  return getHandler(req);
+});
+
+export const PATCH = guarded(async (req: NextRequest) => {
+  const { id } = await req.clone().json().catch(() => ({}));
+  const lead = await pool.query('SELECT company_id FROM public.leads WHERE id = $1', [id]);
+  await requireAccess(actorOf(req), 'crm.edit', lead.rows[0]?.company_id ?? null, 'change a lead');
+  return patchHandler(req);
+});

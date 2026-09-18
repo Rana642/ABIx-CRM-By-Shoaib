@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { actorOf, guarded, requireAccess } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ export const dynamic = 'force-dynamic';
 // Prices and the free-tier allowance live in abix.ai_model_prices with their
 // source and date. Rows come back per day and dimension for the last 90 days;
 // the screen filters and totals them, so every figure on it agrees.
-export async function GET() {
+async function getHandler() {
   try {
     const [sync, rows, runs, limits, prices, span] = await Promise.all([
       pool.query(`
@@ -102,3 +103,9 @@ export async function GET() {
     throw err;
   }
 }
+
+// Portfolio-wide information: only the Owner, or someone with portfolio-wide access (Users & Access).
+export const GET = guarded(async (req: NextRequest) => {
+  await requireAccess(actorOf(req), 'portfolio.view', null, 'AI usage and costs');
+  return getHandler();
+});

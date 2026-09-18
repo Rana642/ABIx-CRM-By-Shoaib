@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { actorOf, guarded, requireAccess } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // freshness, and states plainly: "Show source as stale or unavailable; never
 // display old data as current." So each metric reports `available` — the UI
 // renders an explicit not-connected state rather than a zero that reads as fact.
-export async function GET() {
+async function getHandler() {
   const [companies, brains, blockers, crm, ops] = await Promise.all([
     pool.query(`
       SELECT count(*)::int AS total,
@@ -115,3 +116,9 @@ export async function GET() {
     },
   });
 }
+
+// Portfolio-wide information: only the Owner, or someone with portfolio-wide access (Users & Access).
+export const GET = guarded(async (req: NextRequest) => {
+  await requireAccess(actorOf(req), 'portfolio.view', null, 'portfolio overview');
+  return getHandler();
+});

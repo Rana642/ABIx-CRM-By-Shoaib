@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { can, denied, me as accessMe, recordDenied } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,8 +45,16 @@ function friendly(message: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const actor = actorOf(req);
   const conversationId = req.nextUrl.searchParams.get('conversation_id');
   if (conversationId) {
+    // Only a conversation of a workspace the person may see (Users & Access).
+    const owner = await pool.query('SELECT abix.fn_conversation_company($1)::text AS company_id', [conversationId]);
+    const companyId = owner.rows[0]?.company_id ?? null;
+    if (!(await can(actor, companyId ? 'inbox.view' : 'portfolio.view', companyId))) {
+      await recordDenied(actor, 'read a conversation', 'inbox.view', companyId, { conversation_id: conversationId });
+      return denied();
+    }
     const { rows } = await pool.query(
       `SELECT message_id, direction, sender, sender_name, kind, body, created_at
        FROM abix.whatsapp_messages
@@ -63,6 +72,7 @@ export async function GET(req: NextRequest) {
               w.customer_name, w.status, w.handled_by, w.handler_name, w.started_at, w.last_inbound_at,
               w.metadata->'route'->>'area_label' AS area, w.metadata->'route'->>'enquiry_label' AS enquiry,
               w.metadata->'route'->>'company_slug' AS company_slug,
+              abix.fn_conversation_company(w.conversation_id) AS company_id,
               w.last_inbound_at > now() - interval '24 hours' AS window_open,
               lm.body AS last_body, lm.sender AS last_sender, coalesce(lm.created_at, w.last_inbound_at) AS last_at
        FROM abix.whatsapp_conversations w
@@ -71,18 +81,30 @@ export async function GET(req: NextRequest) {
          WHERE m.conversation_id = w.conversation_id ORDER BY message_id DESC LIMIT 1
        ) lm ON true
        WHERE w.last_inbound_at > now() - interval '14 days'
+         -- Only conversations of workspaces the person may read; unrouted ones need portfolio-wide access.
+         AND CASE WHEN abix.fn_conversation_company(w.conversation_id) IS NULL
+                  THEN abix.fn_access_can($1, 'portfolio.view', NULL)
+                  ELSE abix.fn_access_can($1, 'inbox.view', abix.fn_conversation_company(w.conversation_id)) END
        ORDER BY last_at DESC
-       LIMIT 100`
+       LIMIT 100`,
+      [actor]
     ),
     pool.query(
-      `SELECT pause_id, scope, scope_key, reason, paused_by, paused_at
-       FROM abix.agent_pauses WHERE lifted_at IS NULL ORDER BY paused_at`
+      `SELECT p.pause_id, p.scope, p.scope_key, p.reason, p.paused_by, p.paused_at
+       FROM abix.agent_pauses p
+       LEFT JOIN public.companies pc ON p.scope = 'business' AND pc.slug = p.scope_key
+       WHERE p.lifted_at IS NULL
+         AND (p.scope <> 'business' OR pc.id IN (SELECT abix.fn_access_workspaces($1)))
+       ORDER BY p.paused_at`,
+      [actor]
     ),
     // The businesses the menu routes to — the ones a business-level pause can target.
     pool.query(
       `SELECT slug, name FROM public.companies
        WHERE slug IN ('clif', 'abix-properties', 'abix-portfolio-office', 'serge-abi-personal-brand')
-       ORDER BY name`
+         AND abix.fn_access_can($1, 'agents.pause', id)
+       ORDER BY name`,
+      [actor]
     ),
     // The name the customer sees when this person takes a conversation over.
     pool.query('SELECT display_name FROM abix.console_users WHERE username = $1', [actorOf(req)]),
@@ -90,6 +112,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     me: actorOf(req),
     me_name: meRow.rows[0]?.display_name ?? actorOf(req).split('@')[0],
+    // What the person may do, per workspace, so the screen shows only allowed controls.
+    access: await accessMe(actor),
     conversations: conversations.rows,
     pauses: pauses.rows,
     businesses: businesses.rows,
@@ -155,6 +179,12 @@ export async function POST(req: NextRequest) {
         );
         const c = rows[0];
         if (!c) return NextResponse.json({ error: 'This conversation no longer exists.' }, { status: 404 });
+        const owner = await pool.query('SELECT abix.fn_conversation_company($1)::text AS company_id', [c.conversation_id]);
+        const companyId = owner.rows[0]?.company_id ?? null;
+        if (!(await can(actor, 'inbox.reply', companyId))) {
+          await recordDenied(actor, 'reply to a conversation', 'inbox.reply', companyId, { conversation_id: c.conversation_id });
+          return denied();
+        }
         // Replying without taking over would let the agent answer on top of the person.
         if (c.handled_by !== 'person' || c.handler_name !== actor) {
           return NextResponse.json({ error: 'Take the conversation over before replying.' }, { status: 409 });
@@ -178,6 +208,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
     }
   } catch (e) {
-    return NextResponse.json({ error: friendly((e as Error).message) }, { status: 400 });
+    const msg = (e as Error).message;
+    return NextResponse.json({ error: friendly(msg) }, { status: msg.startsWith('FORBIDDEN:') ? 403 : 400 });
   }
 }

@@ -25,6 +25,16 @@ function matchesPbkdf2(password: string, stored: string): boolean {
 
 export async function verifyLogin(name: string, password: string): Promise<boolean> {
   if (!name || !password) return false;
+  // Only an active account whose access has not expired may sign in (Users & Access, 44_ACCESS.sql).
+  const active = await pool
+    .query(
+      `SELECT 1 FROM abix.console_users WHERE username = $1 AND status = 'active'
+         AND (access_expires_at IS NULL OR access_expires_at > now())`,
+      [name]
+    )
+    .then((r) => r.rowCount === 1)
+    .catch(() => false);
+  if (!active) return false;
   // If the database cannot answer, fall back to the server setting rather than lock everyone out.
   const rows = await pool
     .query('SELECT password_hash FROM abix.console_logins WHERE username = $1', [name])

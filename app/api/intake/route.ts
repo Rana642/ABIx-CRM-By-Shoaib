@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { can, denied, guarded, recordDenied, requireAccess } from '@/lib/access';
 import { buildChunks, publishChunks, type PublishableRow } from '@/lib/intakePublish';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +34,7 @@ const SAVE_KEYS = [
   'applies_to',
 ] as const;
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('company_id');
   if (!companyId) {
     return NextResponse.json({ error: 'company_id is required' }, { status: 400 });
@@ -109,8 +110,16 @@ export async function GET(req: NextRequest) {
     preview: preview.rows[0] ?? null,
     settings: settings.rows[0] ?? { drives_brain: false, adopted_at: null, adopted_by: null },
     me: me.rows[0] ?? null,
+    // What this person may do here (Users & Access): the screen goes read-only without intake.edit.
+    access: { can_edit: await can(actorOf(req), 'intake.edit', companyId) },
   });
 }
+
+// Only for a workspace the person may see (Users & Access).
+export const GET = guarded(async (req: NextRequest) => {
+  await requireAccess(actorOf(req), 'workspace.view', req.nextUrl.searchParams.get('company_id'), 'onboarding record');
+  return getHandler(req);
+});
 
 export async function POST(req: NextRequest) {
   const actor = actorOf(req);
@@ -119,6 +128,13 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'The request was not valid JSON.' }, { status: 400 });
+  }
+  // Seeing the workspace comes first; saving and approving are then refused by the database itself
+  // unless the person holds intake.edit or is the Owner (44_ACCESS.sql).
+  const companyId = typeof body.company_id === 'string' ? body.company_id : null;
+  if (!(await can(actor, 'workspace.view', companyId))) {
+    await recordDenied(actor, 'onboarding record', 'workspace.view', companyId);
+    return denied();
   }
 
   try {

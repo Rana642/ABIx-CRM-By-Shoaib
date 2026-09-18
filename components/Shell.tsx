@@ -18,6 +18,7 @@ export type Section =
   | 'insights-and-costs'
   | 'connectors'
   | 'settings'
+  | 'users'
   | 'personal';
 
 export type Company = {
@@ -72,6 +73,8 @@ export function Shell({
   onCompanyChange,
   counts,
   autonomy,
+  allowed,
+  user,
   children,
 }: {
   active: Section;
@@ -84,6 +87,10 @@ export function Shell({
   // Highest authority level any company currently holds, and how many are
   // above observe-only. Null until the portfolio has been read.
   autonomy: { level: string; above: number; total: number } | null;
+  // Sections this person may open (Users & Access); the API enforces the same rules.
+  allowed: Section[];
+  // The signed-in person, shown in the header with a sign-out link.
+  user: { name: string; role: string } | null;
   children: React.ReactNode;
 }) {
   const [navOpen, setNavOpen] = useState(false);
@@ -124,8 +131,11 @@ export function Shell({
 
   const footerNav: NavItem[] = [
     { key: 'connectors', label: 'Connectors', icon: 'hub', dot: true },
+    { key: 'users', label: 'Users & Access', icon: 'manage_accounts' },
     { key: 'settings', label: 'Settings', icon: 'settings' },
   ];
+  const visibleMain = mainNav.filter((i) => allowed.includes(i.key));
+  const visibleFooter = footerNav.filter((i) => allowed.includes(i.key));
 
   return (
     <>
@@ -185,7 +195,7 @@ export function Shell({
           </div>
 
           <nav className="px-space-12 py-space-8 flex flex-col gap-space-2 overflow-y-auto">
-            {mainNav.map((item) => (
+            {visibleMain.map((item) => (
               <NavLink key={item.key} item={item} active={active} onNavigate={go} />
             ))}
           </nav>
@@ -193,7 +203,7 @@ export function Shell({
 
         <div className="p-space-12 border-t border-outline-variant/20 flex flex-col gap-space-2 shrink-0">
           <nav className="flex flex-col gap-space-2">
-            {footerNav.map((item) => (
+            {visibleFooter.map((item) => (
               <NavLink key={item.key} item={item} active={active} onNavigate={go} />
             ))}
           </nav>
@@ -279,12 +289,20 @@ export function Shell({
               </div>
               <div className="hidden md:flex flex-col min-w-0">
                 <span className="font-body-sm text-body-sm font-semibold text-on-surface leading-tight truncate">
-                  Serge Abi
+                  {user?.name ?? '…'}
                 </span>
                 <span className="font-label-sm text-label-sm text-outline leading-tight truncate">
-                  CEO / Portfolio Principal
+                  {user?.role ?? ''}
                 </span>
               </div>
+              <a
+                href="/api/auth/logout"
+                className="ml-space-4 flex items-center gap-1 px-space-8 py-space-4 rounded-lg font-body-sm text-body-sm text-on-surface-variant hover:bg-surface-container-high"
+                title="Sign out"
+              >
+                <Icon name="logout" className="text-[18px]" />
+                <span className="hidden sm:inline">Sign out</span>
+              </a>
             </div>
           </div>
         </header>

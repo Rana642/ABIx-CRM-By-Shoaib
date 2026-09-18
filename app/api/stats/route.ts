@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { actorOf, guarded, requireAccess } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('company_id');
   if (!companyId) {
     return NextResponse.json({ error: 'company_id is required' }, { status: 400 });
@@ -35,3 +36,9 @@ export async function GET(req: NextRequest) {
     leads_by_stage: leadsByStage.rows,
   });
 }
+
+// Only for a workspace the person may see (Users & Access).
+export const GET = guarded(async (req: NextRequest) => {
+  await requireAccess(actorOf(req), 'workspace.view', req.nextUrl.searchParams.get('company_id'), 'sales figures');
+  return getHandler(req);
+});

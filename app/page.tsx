@@ -12,6 +12,7 @@ import { Onboarding } from '@/components/screens/Onboarding';
 import { Insights } from '@/components/screens/Insights';
 import { Inbox } from '@/components/screens/Inbox';
 import { Settings } from '@/components/screens/Settings';
+import { Users } from '@/components/screens/Users';
 import type {
   Portfolio,
   Blocker,
@@ -25,8 +26,30 @@ import type {
   Stats,
 } from '@/components/types';
 
+// The signed-in person and what they may do (Users & Access, /api/me).
+type Me = {
+  username: string;
+  display_name: string;
+  is_owner: boolean;
+  can_manage_users: boolean;
+  portfolio: boolean;
+  workspaces: { company_id: string; code: string; name: string; permissions: string[] | null }[];
+};
+
+// Sections that need no portfolio-wide access: the ones of a single workspace.
+const WORKSPACE_SECTIONS: Section[] = ['sales-and-customers', 'inbox', 'company-brain', 'onboarding', 'settings'];
+
+function roleLabel(m: Me): string {
+  if (m.is_owner) return 'Owner';
+  const perms = new Set(m.workspaces.flatMap((w) => w.permissions ?? []));
+  const role = perms.has('agents.pause') ? 'Workspace Administrator' : perms.has('inbox.reply') ? 'Operator' : 'Viewer';
+  if (m.portfolio) return `${role} · all businesses`;
+  return m.workspaces.length === 1 ? `${role} · ${m.workspaces[0].name}` : role;
+}
+
 export default function Dashboard() {
   const [section, setSection] = useState<Section>('overview');
+  const [me, setMe] = useState<Me | null>(null);
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState('');
@@ -50,12 +73,37 @@ export default function Dashboard() {
     const known: Section[] = [
       'overview', 'ask-aya', 'businesses', 'onboarding', 'sales-and-customers', 'inbox', 'missions',
       'workforce', 'company-brain', 'approvals', 'insights-and-costs', 'connectors', 'settings',
-      'personal',
+      'personal', 'users',
     ];
     if (wanted && (known as string[]).includes(wanted)) setSection(wanted as Section);
   }, []);
 
   useEffect(() => {
+    fetch('/api/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: Me | null) => setMe(m));
+  }, []);
+
+  const allowed: Section[] = !me
+    ? []
+    : me.portfolio
+      ? ['overview', 'ask-aya', 'businesses', 'onboarding', 'sales-and-customers', 'inbox', 'missions', 'workforce',
+         'company-brain', 'approvals', 'insights-and-costs', 'connectors', 'settings', 'personal',
+         ...(me.can_manage_users ? (['users'] as Section[]) : [])]
+      : [...WORKSPACE_SECTIONS, ...(me.can_manage_users ? (['users'] as Section[]) : [])];
+
+  // Open a section the person may see.
+  useEffect(() => {
+    if (me && !allowed.includes(section)) setSection(allowed.includes('sales-and-customers') ? 'sales-and-customers' : allowed[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, section]);
+
+  const permsHere = new Set(
+    me?.is_owner ? ['crm.edit', 'intake.edit', 'inbox.reply'] : me?.workspaces.find((w) => w.company_id === companyId)?.permissions ?? []
+  );
+
+  useEffect(() => {
+    if (!me) return;
     fetch('/api/companies')
       .then((r) => r.json())
       .then((data: Company[]) => {
@@ -64,6 +112,7 @@ export default function Dashboard() {
         const firstOperating = clif ?? data.find((c) => c.entity_type !== 'portfolio') ?? data[0];
         if (firstOperating) setCompanyId(firstOperating.id);
       });
+    if (!me.portfolio) return;
     fetch('/api/portfolio').then((r) => r.json()).then(setPortfolio);
     fetch('/api/blockers').then((r) => r.json()).then(setBlockers);
     fetch('/api/launchpad').then((r) => r.json()).then(setLaunchpad);
@@ -73,7 +122,7 @@ export default function Dashboard() {
         setRoles(d.roles);
         setDivisions(d.divisions);
       });
-  }, []);
+  }, [me]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -99,6 +148,11 @@ export default function Dashboard() {
   }, [companyId]);
 
   async function moveLead(leadId: string, newStage: string) {
+    // Viewers cannot change leads; the API refuses it too.
+    if (!permsHere.has('crm.edit')) {
+      alert('Your access to this business is view-only.');
+      return;
+    }
     setLeads((prev) =>
       prev.map((l) => (l.id === leadId ? { ...l, pipeline_stage: newStage } : l))
     );
@@ -142,6 +196,8 @@ export default function Dashboard() {
         approvals: portfolio?.ops.approvals_pending ?? 0,
       }}
       autonomy={autonomy}
+      allowed={allowed}
+      user={me ? { name: me.display_name, role: roleLabel(me) } : null}
     >
       {section === 'overview' && (
         <Overview
@@ -163,6 +219,11 @@ export default function Dashboard() {
         />
       )}
 
+      {section === 'onboarding' && companyId && !permsHere.has('intake.edit') && (
+        <div role="status" className="mb-space-12 rounded-lg bg-surface-container-high px-space-12 py-space-8 font-body-sm text-body-sm text-on-surface-variant">
+          View only: your access lets you read this record, not change or approve it.
+        </div>
+      )}
       {section === 'onboarding' && companyId && (
         <Onboarding
           companyId={companyId}
@@ -249,6 +310,8 @@ export default function Dashboard() {
       )}
 
       {section === 'settings' && <Settings />}
+
+      {section === 'users' && <Users />}
 
       {section === 'personal' && (
         <ComingSoon

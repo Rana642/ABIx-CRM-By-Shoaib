@@ -9,6 +9,7 @@ import { Card, ComingSoon } from '../ui';
 export function Settings() {
   const [user, setUser] = useState('');
   const [minLength, setMinLength] = useState(12);
+  const [mfa, setMfa] = useState<{ mfa_enabled: boolean; mfa_required: boolean } | null>(null);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [repeat, setRepeat] = useState('');
@@ -21,6 +22,7 @@ export function Settings() {
       .then((d) => {
         setUser(d.user ?? '');
         setMinLength(d.minLength ?? 12);
+        setMfa(d.mfa ?? null);
       });
   }, []);
 
@@ -48,7 +50,7 @@ export function Settings() {
     setRepeat('');
     setMessage({
       ok: true,
-      text: 'Password changed. Your browser will ask you to sign in again — use the new password.',
+      text: 'Password changed. Use the new password next time you sign in.',
     });
   }
 
@@ -96,6 +98,33 @@ export function Settings() {
             {busy ? 'Changing…' : 'Change password'}
           </button>
         </form>
+      </Card>
+
+      <Card className="flex flex-col gap-space-12 max-w-[560px]">
+        <div className="flex items-center gap-space-8">
+          <Icon name="verified_user" className="text-primary text-[22px]" />
+          <span className="font-headline-sm text-headline-sm text-on-surface">Two-step sign-in</span>
+        </div>
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          {mfa?.mfa_enabled
+            ? 'On. Each sign-in asks for the six-digit code from your authenticator app.'
+            : mfa?.mfa_required
+              ? 'Required: you set it up at your next sign-in.'
+              : 'Off. Turn it on to be asked for a code from an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…) at each sign-in.'}
+        </p>
+        {mfa && !mfa.mfa_enabled && !mfa.mfa_required && (
+          <button
+            type="button"
+            className="self-start px-space-16 py-space-8 rounded-lg font-body-sm text-body-sm font-semibold bg-primary-container text-on-primary hover:opacity-90"
+            onClick={async () => {
+              if (!confirm('Turn on two-step sign-in? You will sign out now and set it up when you sign in again.')) return;
+              await fetch('/api/account', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'require_mfa' }) });
+              window.location.href = '/api/auth/logout';
+            }}
+          >
+            Turn on and set up now
+          </button>
+        )}
       </Card>
 
       <ComingSoon

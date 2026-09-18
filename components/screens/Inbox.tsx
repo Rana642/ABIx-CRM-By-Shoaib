@@ -18,6 +18,7 @@ type Conversation = {
   area: string | null;
   enquiry: string | null;
   company_slug: string | null;
+  company_id: string | null;
   window_open: boolean;
   last_body: string | null;
   last_sender: string | null;
@@ -36,6 +37,12 @@ type Message = {
 
 type Pause = { pause_id: string; scope: 'all' | 'line' | 'business'; scope_key: string | null; reason: string | null; paused_by: string; paused_at: string };
 type Business = { slug: string; name: string };
+// What the signed-in person may do (Users & Access); the API and database enforce the same rules.
+type Access = {
+  is_owner: boolean;
+  pause_all: boolean;
+  workspaces: { company_id: string; permissions: string[] | null }[];
+};
 
 const POLL_MS = 5000;
 
@@ -80,6 +87,7 @@ async function post(body: object): Promise<{ error?: string; warning?: string }>
 export function Inbox() {
   const [me, setMe] = useState('');
   const [meName, setMeName] = useState('');
+  const [access, setAccess] = useState<Access | null>(null);
   // The message sent when taking over; null while the take-over panel is closed.
   const [intro, setIntro] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -97,6 +105,7 @@ export function Inbox() {
     const d = await fetch('/api/inbox').then((r) => r.json());
     setMe(d.me ?? '');
     setMeName(d.me_name ?? d.me ?? '');
+    setAccess(d.access ?? null);
     setConversations(d.conversations ?? []);
     setPauses(d.pauses ?? []);
     setBusinesses(d.businesses ?? []);
@@ -130,6 +139,11 @@ export function Inbox() {
 
   const open = conversations.find((c) => c.conversation_id === openId) ?? null;
   const mine = !!open && open.handled_by === 'person' && open.handler_name === me;
+  const canReply = (c: Conversation | null) =>
+    !!c && (!!access?.is_owner ||
+      !!access?.workspaces.find((w) => w.company_id === c.company_id)?.permissions?.includes('inbox.reply'));
+  const canPauseBusiness = businesses.length > 0;
+  const canPauseAll = !!access?.pause_all;
 
   async function act(body: object, after?: () => void) {
     setBusy(true);
@@ -166,8 +180,9 @@ export function Inbox() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-space-8">
-            {!pauseAll && (
+            {!pauseAll && (canPauseBusiness || canPauseAll) && (
               <>
+                {canPauseBusiness && (<>
                 <label htmlFor="pause-target" className="sr-only">Business to pause</label>
                 <select
                   id="pause-target"
@@ -191,6 +206,8 @@ export function Inbox() {
                 >
                   Pause this business
                 </button>
+                </>)}
+                {canPauseAll && (
                 <button
                   type="button"
                   disabled={busy}
@@ -202,7 +219,11 @@ export function Inbox() {
                 >
                   Pause all agents
                 </button>
+                )}
               </>
+            )}
+            {!canPauseBusiness && !canPauseAll && (
+              <span className="font-body-sm text-body-sm text-outline">View only: pausing needs another role.</span>
             )}
           </div>
         </div>
@@ -220,6 +241,7 @@ export function Inbox() {
                   </b>{' '}
                   paused by {p.paused_by} · {when(p.paused_at)}
                 </span>
+                {(p.scope === 'all' ? canPauseAll : businesses.some((b) => b.slug === p.scope_key)) && (
                 <button
                   type="button"
                   disabled={busy}
@@ -228,6 +250,7 @@ export function Inbox() {
                 >
                   Resume
                 </button>
+                )}
               </li>
             ))}
           </ul>
@@ -312,7 +335,9 @@ export function Inbox() {
                     </span>
                   </div>
                 </div>
-                {open.handled_by === 'agent' ? (
+                {!canReply(open) ? (
+                  <span className="font-body-sm text-body-sm text-outline">View only</span>
+                ) : open.handled_by === 'agent' ? (
                   <button
                     type="button"
                     disabled={busy || open.status === 'closed' || intro !== null}
@@ -422,7 +447,11 @@ export function Inbox() {
                   if (draft.trim()) act({ action: 'send', conversation_id: open.conversation_id, text: draft }, () => setDraft(''));
                 }}
               >
-                {!mine ? (
+                {!canReply(open) ? (
+                  <span className="font-body-sm text-body-sm text-on-surface-variant">
+                    Your access to this conversation is view-only.
+                  </span>
+                ) : !mine ? (
                   <span className="font-body-sm text-body-sm text-on-surface-variant">
                     {open.handled_by === 'agent'
                       ? 'Aya is answering this conversation. Take it over to reply yourself; Aya stays silent until you hand it back.'

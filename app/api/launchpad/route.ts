@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { actorOf, guarded, requireAccess } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,7 +8,7 @@ export const dynamic = 'force-dynamic';
 // weighted formula from 08_COMPANY_BRAIN_ONBOARDING.yaml
 // (sum(module_score * weight) / 100) and applies the hard caps. It replaces the
 // earlier `approved / 20 * 100`, which ignored module weights entirely.
-export async function GET() {
+async function getHandler() {
   const { rows } = await pool.query(`
     SELECT c.company_id                       AS id,
            c.display_name                     AS name,
@@ -40,3 +41,9 @@ export async function GET() {
   `);
   return NextResponse.json(rows);
 }
+
+// Portfolio-wide information: only the Owner, or someone with portfolio-wide access (Users & Access).
+export const GET = guarded(async (req: NextRequest) => {
+  await requireAccess(actorOf(req), 'portfolio.view', null, 'portfolio launchpad');
+  return getHandler();
+});

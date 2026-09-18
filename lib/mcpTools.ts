@@ -51,7 +51,7 @@ async function db<T = Json>(sql: string, params: unknown[]): Promise<T[]> {
 
 type Company = { company_id: string; company_code: string; display_name: string };
 
-async function business(ref: string): Promise<Company> {
+async function business(ref: string, user: TokenUser): Promise<Company> {
   const r = ref.trim();
   const rows = await db<Company>(
     `SELECT company_id, company_code, display_name FROM abix.companies
@@ -64,11 +64,24 @@ async function business(ref: string): Promise<Company> {
   const exact = rows.filter(
     (c) => c.company_code.toUpperCase() === r.toUpperCase() || c.display_name.toLowerCase() === r.toLowerCase()
   );
-  if (exact.length === 1) return exact[0];
-  if (rows.length > 1) {
-    fail(`"${ref}" matches several businesses: ${rows.map((c) => `${c.company_code} (${c.display_name})`).join(', ')}. Use the code.`);
+  let found: Company;
+  if (exact.length === 1) found = exact[0];
+  else if (rows.length > 1) {
+    return fail(`"${ref}" matches several businesses: ${rows.map((c) => `${c.company_code} (${c.display_name})`).join(', ')}. Use the code.`);
+  } else found = rows[0];
+  // The connector acts for a person and never beyond their access (Users & Access): a business
+  // they may not see is refused, and the refusal is recorded. Saving and approving are also
+  // refused by the database unless their role allows it.
+  const ok = await db<{ ok: boolean }>('SELECT abix.fn_access_can($1, $2, $3::uuid) AS ok', [
+    user.username, 'workspace.view', found.company_id,
+  ]);
+  if (!ok[0]?.ok) {
+    await db('SELECT abix.fn_access_log($1, $2, NULL, $3::uuid, $4, $5, $6::jsonb)', [
+      user.username, 'connector: open a business', found.company_id, 'workspace.view', 'denied', '{}',
+    ]);
+    return fail(`Your access does not include ${found.display_name}.`);
   }
-  return rows[0];
+  return found;
 }
 
 type Field = {
@@ -288,7 +301,7 @@ export const TOOLS: Tool[] = [
       "Serge Abi's businesses in Aya, with each onboarding record's progress (fields approved, in review, draft, not applicable, still open) and Company Brain readiness. Start here to find a business's code. Any business can be onboarded: saving its first answer starts its record.",
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: async () => {
+    run: async (_args, user) => {
       const total = (await db<{ n: number }>('SELECT count(*)::int AS n FROM abix.intake_fields', []))[0].n;
       const rows = await db<Json & { approved: number; under_review: number; draft: number; not_applicable: number }>(
         `SELECT c.company_code AS code, c.display_name AS name, c.status,
@@ -302,9 +315,10 @@ export const TOOLS: Tool[] = [
            LEFT JOIN abix.intake_companies ic ON ic.company_id = c.company_id
            LEFT JOIN abix.intake_responses r ON r.company_id = c.company_id
            LEFT JOIN abix.v_company_readiness v ON v.company_id = c.company_id
+          WHERE c.company_id IN (SELECT abix.fn_access_workspaces($1))
           GROUP BY c.company_code, c.display_name, c.status, ic.company_id, ic.drives_brain, v.readiness_score
           ORDER BY has_record DESC, c.company_code`,
-        []
+        [user.username]
       );
       return {
         fields_per_record: total,
@@ -370,8 +384,8 @@ export const TOOLS: Tool[] = [
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: async (args) => {
-      const c = await business(text(args, 'business', true)!);
+    run: async (args, user) => {
+      const c = await business(text(args, 'business', true)!, user);
       const section = text(args, 'section');
       const status = text(args, 'status');
       const by = text(args, 'answered_by');
@@ -439,8 +453,8 @@ export const TOOLS: Tool[] = [
       "What stands between a business and a complete (100%) record: how many fields are left for the owner and for the technical team, the gaps that block a go-live, the gaps with a named question, readiness now and if the record drove the Brain, and each Brain module's status from the record.",
     inputSchema: { type: 'object', properties: { business: BUSINESS }, required: ['business'], additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: async (args) => {
-      const c = await business(text(args, 'business', true)!);
+    run: async (args, user) => {
+      const c = await business(text(args, 'business', true)!, user);
       const [gaps, modules, left, settings] = await Promise.all([
         db<Json>(
           `SELECT f.field_code, f.label, f.section_code AS section, f.answered_by, r.status, r.note, r.blocking,
@@ -507,7 +521,7 @@ export const TOOLS: Tool[] = [
     },
     annotations: WRITE,
     run: async (args, user) => {
-      const c = await business(text(args, 'business', true)!);
+      const c = await business(text(args, 'business', true)!, user);
       return { business: c.company_code, ...(await saveOne(c, user, args)) };
     },
   },
@@ -532,7 +546,7 @@ export const TOOLS: Tool[] = [
     },
     annotations: WRITE,
     run: async (args, user) => {
-      const c = await business(text(args, 'business', true)!);
+      const c = await business(text(args, 'business', true)!, user);
       if (!Array.isArray(args.fields) || args.fields.length === 0) fail('fields must be a non-empty list.');
       const items = args.fields as Json[];
       if (items.length > 25) fail('Save at most 25 answers per call.');
@@ -570,7 +584,7 @@ export const TOOLS: Tool[] = [
     },
     annotations: { ...WRITE, idempotentHint: true },
     run: async (args, user) => {
-      const c = await business(text(args, 'business', true)!);
+      const c = await business(text(args, 'business', true)!, user);
       if (!user.can_approve) fail('Only the business owner can approve. Save answers as under_review instead, and Serge approves them.');
       const codes = Array.isArray(args.field_codes) ? (args.field_codes as unknown[]).filter((x) => typeof x === 'string') : null;
       const section = text(args, 'section');
@@ -605,7 +619,7 @@ export const TOOLS: Tool[] = [
     },
     annotations: { ...WRITE, idempotentHint: true },
     run: async (args, user) => {
-      const c = await business(text(args, 'business', true)!);
+      const c = await business(text(args, 'business', true)!, user);
       const f = await field(text(args, 'field_code', true)!);
       if (!user.can_approve) fail('Only the business owner can approve. Save it as under_review instead, and Serge approves it.');
       const cur = await current(c.company_id, f.field_code);
@@ -657,7 +671,7 @@ export const TOOLS: Tool[] = [
     },
     annotations: { ...WRITE, idempotentHint: true },
     run: async (args, user) => {
-      const c = await business(text(args, 'business', true)!);
+      const c = await business(text(args, 'business', true)!, user);
       const reason = text(args, 'reason', true)!;
       const code = text(args, 'field_code');
       const section = text(args, 'section');
@@ -692,7 +706,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { business: BUSINESS }, required: ['business'], additionalProperties: false },
     annotations: { ...WRITE, idempotentHint: true },
     run: async (args, user) => {
-      const c = await business(text(args, 'business', true)!);
+      const c = await business(text(args, 'business', true)!, user);
       if (!user.can_approve) fail('Only the business owner can switch a Brain over to its record.');
       const [r] = await db<{ r: Json }>('SELECT abix.fn_intake_apply($1::uuid, $2, true) AS r', [c.company_id, user.username]);
       return { business: c.company_code, record_drives_brain: true, ...r.r };

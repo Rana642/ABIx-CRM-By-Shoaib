@@ -1,11 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { actorOf, guarded, requireAccess } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
 // The decision queue: everything currently blocked on a human, generated from
 // the portfolio manifest and the readiness hard caps rather than hand-maintained.
-export async function GET() {
+async function getHandler() {
   const { rows } = await pool.query(`
     -- 1. The single highest-leverage blocker: no company has a named human owner,
     --    which hard-caps every one of them at A0 regardless of Brain readiness.
@@ -87,3 +88,9 @@ export async function GET() {
   // Drop any bucket that matched nothing.
   return NextResponse.json(rows.filter((r) => r.subjects !== null));
 }
+
+// Portfolio-wide information: only the Owner, or someone with portfolio-wide access (Users & Access).
+export const GET = guarded(async (req: NextRequest) => {
+  await requireAccess(actorOf(req), 'portfolio.view', null, 'portfolio blockers');
+  return getHandler();
+});

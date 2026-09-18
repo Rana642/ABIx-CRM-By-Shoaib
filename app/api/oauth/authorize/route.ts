@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { pool } from '@/lib/db';
 import { verifyLogin } from '@/lib/logins';
+import { verifyTotp } from '@/lib/totp';
 import { BASE_URL, MCP_RESOURCE, SCOPE, findClient, issueCode, type OAuthClient } from '@/lib/oauth';
 
 export const dynamic = 'force-dynamic';
@@ -108,6 +109,8 @@ function form(p: Params, client: OAuthClient, error?: string, username = '') {
        <input id="username" name="username" autocomplete="username" required value="${esc(username)}">
        <label for="password">Password</label>
        <input id="password" name="password" type="password" autocomplete="current-password" required>
+       <label for="code">Two-step code (only if your account uses one)</label>
+       <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}">
        <button type="submit">Allow access</button>
      </form>
      <small>You can disconnect it at any time from the connector's settings.</small>`
@@ -130,10 +133,20 @@ export async function POST(req: NextRequest) {
   const username = String(data.get('username') ?? '').trim();
   const password = String(data.get('password') ?? '');
   const known = await pool.query('SELECT 1 FROM abix.console_users WHERE username = $1', [username]);
+  // Same rule as the console: an active account, the password, and the two-step code when set up.
+  const mfa = await pool.query('SELECT mfa_enabled, mfa_required, mfa_secret FROM abix.console_users WHERE username = $1', [username]);
+  const m = mfa.rows[0];
   if (known.rowCount !== 1 || !(await verifyLogin(username, password))) {
     // A pause on every failure keeps guessing slow.
     await new Promise((r) => setTimeout(r, 800));
     return form(p, client!, 'That username and password did not match.', username);
+  }
+  if (m?.mfa_required && !m.mfa_enabled) {
+    return form(p, client!, 'Set up two-step sign-in in the console first (sign in there once), then connect.', username);
+  }
+  if (m?.mfa_enabled && !verifyTotp(m.mfa_secret, String(data.get('code') ?? ''))) {
+    await new Promise((r) => setTimeout(r, 800));
+    return form(p, client!, 'Enter the current six-digit code from your authenticator app.', username);
   }
 
   const code = await issueCode({

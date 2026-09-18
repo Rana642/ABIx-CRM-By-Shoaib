@@ -1,12 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { actorOf, guarded, requireAccess } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
 // The 134-role workforce registry from 04_AGENT_REGISTRY.json.
 // Roles are logical capability definitions; a role only becomes active for a
 // company through an agent_deployment, which is why deployed_count matters.
-export async function GET() {
+async function getHandler() {
   const [roles, divisions] = await Promise.all([
     pool.query(`
       SELECT r.agent_role_id, r.role_name, r.division_code, r.division_name,
@@ -31,3 +32,9 @@ export async function GET() {
 
   return NextResponse.json({ roles: roles.rows, divisions: divisions.rows });
 }
+
+// Portfolio-wide information: only the Owner, or someone with portfolio-wide access (Users & Access).
+export const GET = guarded(async (req: NextRequest) => {
+  await requireAccess(actorOf(req), 'portfolio.view', null, 'agent workforce');
+  return getHandler();
+});
