@@ -539,6 +539,126 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'get_capabilities',
+    title: 'What Aya can do today, and what is still to build',
+    description:
+      "Aya's capability list: for each capability whether it runs today (live_tested, with the date and the test or run behind it), is built but waiting to be connected or approved (built_awaiting), is on the plan with a milestone (planned) or only proposed (not_started), with the workflow, connector, permission, evidence and the remaining blocker. A registered role or a built workflow is never listed as working unless a test says so. Optional filters: status, area, business.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['live_tested', 'built_awaiting', 'planned', 'not_started'], description: 'Only capabilities in this state.' },
+        area: { type: 'string', description: 'Only this area, e.g. Security, Operations, Phase 1, Voice.' },
+        business: { ...BUSINESS, description: 'Only capabilities of this business (code or name). Platform-wide ones are left out.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    run: async (args, user) => {
+      const status = text(args, 'status');
+      const area = text(args, 'area');
+      const ref = text(args, 'business');
+      const company = ref ? await business(ref, user) : null;
+      // Platform-wide rows need portfolio-wide access; a business's rows need access to that business.
+      const rows = await db<Json>(
+        `SELECT r.capability_id, r.name, r.area, r.status, r.company_code, r.workflow_ref, r.connector, r.permission,
+                r.last_verified_on::text AS last_verified_on, r.evidence, r.blocker, r.milestone, r.version
+           FROM abix.capability_registry r
+           LEFT JOIN abix.companies c ON c.company_code = r.company_code
+          WHERE ($2::text IS NULL OR r.status = $2)
+            AND ($3::text IS NULL OR lower(r.area) = lower($3))
+            AND ($4::text IS NULL OR r.company_code = $4)
+            AND (CASE WHEN r.company_code IS NULL THEN abix.fn_access_can($1, 'portfolio.view', NULL)
+                      ELSE c.company_id IN (SELECT abix.fn_access_workspaces($1)) END)
+          ORDER BY CASE r.status WHEN 'live_tested' THEN 1 WHEN 'built_awaiting' THEN 2 WHEN 'planned' THEN 3 ELSE 4 END,
+                   r.area, r.name`,
+        [user.username, status ?? null, area ?? null, company?.company_code ?? null]
+      );
+      const tally: Record<string, number> = {};
+      for (const r of rows) tally[String(r.status)] = (tally[String(r.status)] ?? 0) + 1;
+      return {
+        counts: tally,
+        note: 'Dates are the day a test or run last showed the capability working. Nothing here is inferred from a role or workflow name.',
+        capabilities: rows.map((r) => {
+          const out: Json = {};
+          for (const [k, v] of Object.entries(r)) if (v !== null) out[k] = v;
+          return out;
+        }),
+      };
+    },
+  },
+  {
+    name: 'get_aya_status',
+    title: 'Aya status summary',
+    description:
+      "A read-only summary of Aya as this person may see it: open alerts, any agent pause in force, WhatsApp conversations and new leads over the last day and week per business they may access, and how many capabilities are live, awaiting or planned. Businesses and platform-wide figures outside the person's access are left out, not shown as zero.",
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    run: async (_args, user) => {
+      const who = user.username;
+      const [alerts, pauses, conversations, leads, caps] = await Promise.all([
+        db<Json>(
+          `SELECT severity, count(*)::int AS open
+             FROM abix.alerts a
+            WHERE a.status = 'open'
+              AND (CASE WHEN a.company_id IS NULL THEN abix.fn_access_can($1, 'portfolio.view', NULL)
+                        ELSE a.company_id IN (SELECT abix.fn_access_workspaces($1)) END)
+            GROUP BY severity ORDER BY severity`,
+          [who]
+        ),
+        db<Json>(
+          `SELECT p.scope, p.scope_key, p.reason, p.paused_by, p.paused_at::text AS paused_at
+             FROM abix.agent_pauses p
+             LEFT JOIN public.companies pc ON p.scope = 'business' AND pc.slug = p.scope_key
+            WHERE p.lifted_at IS NULL
+              AND (p.scope <> 'business' OR pc.id IN (SELECT abix.fn_access_workspaces($1)))
+            ORDER BY p.paused_at`,
+          [who]
+        ),
+        db<Json>(
+          `SELECT c.company_code AS business,
+                  (count(*) FILTER (WHERE w.last_inbound_at > now() - interval '24 hours'))::int AS conversations_24h,
+                  (count(*) FILTER (WHERE w.last_inbound_at > now() - interval '7 days'))::int AS conversations_7d,
+                  (count(*) FILTER (WHERE w.handled_by = 'person'))::int AS with_a_person_now
+             FROM abix.whatsapp_conversations w
+             JOIN abix.companies c ON c.company_id = abix.fn_conversation_company(w.conversation_id)
+            WHERE c.company_id IN (SELECT abix.fn_access_workspaces($1))
+            GROUP BY c.company_code ORDER BY c.company_code`,
+          [who]
+        ),
+        db<Json>(
+          `SELECT c.company_code AS business,
+                  (count(*) FILTER (WHERE l.created_at > now() - interval '24 hours'))::int AS new_leads_24h,
+                  (count(*) FILTER (WHERE l.created_at > now() - interval '7 days'))::int AS new_leads_7d
+             FROM public.leads l
+             JOIN abix.companies c ON c.company_id = l.company_id
+            WHERE c.company_id IN (SELECT abix.fn_access_workspaces($1))
+            GROUP BY c.company_code ORDER BY c.company_code`,
+          [who]
+        ),
+        db<Json>(
+          `SELECT r.status, count(*)::int AS n
+             FROM abix.capability_registry r
+             LEFT JOIN abix.companies c ON c.company_code = r.company_code
+            WHERE (CASE WHEN r.company_code IS NULL THEN abix.fn_access_can($1, 'portfolio.view', NULL)
+                        ELSE c.company_id IN (SELECT abix.fn_access_workspaces($1)) END)
+            GROUP BY r.status`,
+          [who]
+        ),
+      ]);
+      const capabilities: Record<string, number> = {};
+      for (const r of caps) capabilities[String(r.status)] = Number(r.n);
+      return {
+        as_of: new Date().toISOString(),
+        open_alerts: alerts,
+        agents_paused: pauses.length > 0 ? pauses : 'none',
+        whatsapp: conversations,
+        leads,
+        capabilities,
+        next: 'Call get_capabilities for the detail behind those counts.',
+      };
+    },
+  },
+  {
     name: 'save_field',
     title: 'Save an answer to a field',
     description:
@@ -750,4 +870,6 @@ export const INSTRUCTIONS =
   'technical team prepares the rest), save what he states or confirms — several at once with save_fields — and ' +
   'never invent facts, prices or policies. Save answers as under_review; approve only when the owner explicitly asks ' +
   '(approve_fields takes a whole section at once). When he is ready, use_record_for_brain makes the Brain follow the ' +
-  'record. Customers see nothing until the business is published from the console at https://ai.sergeabi.com.';
+  'record. Customers see nothing until the business is published from the console at https://ai.sergeabi.com. ' +
+  'For what Aya can actually do today, call get_capabilities; for how things stand now, get_aya_status. ' +
+  'Never describe a role or a built workflow as working unless get_capabilities lists it as live_tested.';
