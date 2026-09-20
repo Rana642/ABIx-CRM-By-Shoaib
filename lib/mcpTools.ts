@@ -84,6 +84,22 @@ async function business(ref: string, user: TokenUser): Promise<Company> {
   return found;
 }
 
+// Fields marked restricted are not returned to someone without sensitive.view on that business, and
+// reading them is recorded for someone who has it (Serge, 18 and 19 Sept). The connector never shows
+// more than the person would see on screen.
+async function hiddenFields(user: TokenUser, companyId: string): Promise<Set<string>> {
+  const rows = await db<{ field_code: string }>('SELECT abix.fn_restricted_fields($1, $2::uuid) AS field_code', [
+    user.username, companyId,
+  ]);
+  return new Set(rows.map((x) => x.field_code));
+}
+
+async function noteSensitive(user: TokenUser, companyId: string, what: string, count: number) {
+  if (count > 0) {
+    await db('SELECT abix.fn_log_sensitive_read($1, $2::uuid, $3, $4)', [user.username, companyId, what, count]);
+  }
+}
+
 type Field = {
   field_code: string;
   section_code: string;
@@ -432,11 +448,20 @@ export const TOOLS: Tool[] = [
           ORDER BY s.seq, f.seq`,
         [c.company_id, section ?? null, status ?? null, by ?? null]
       );
+      const hidden = await hiddenFields(user, c.company_id);
+      const shown = (rows as unknown as { field_code: string; visibility: string }[])
+        .filter((x) => !hidden.has(x.field_code));
+      await noteSensitive(user, c.company_id, 'record through the connector',
+        hidden.size === 0 ? shown.filter((x) => x.visibility === 'restricted').length : 0);
+      const left_out = rows.length - shown.length;
+      rows.length = 0;
+      rows.push(...(shown as unknown as Json[]));
       const limit = 60;
       return {
         business: c.company_code,
         name: c.display_name,
         count: rows.length,
+        ...(left_out > 0 ? { restricted_not_shown: left_out } : {}),
         fields: rows.slice(0, limit).map((r) => {
           const out: Json = {};
           for (const [k, v] of Object.entries(r)) if (v !== null && !(k === 'rows' && r.input_kind !== 'table')) out[k] = v;
@@ -488,6 +513,11 @@ export const TOOLS: Tool[] = [
         ),
         db('SELECT drives_brain FROM abix.intake_companies WHERE company_id = $1', [c.company_id]),
       ]);
+      // A gap on a restricted field is itself restricted information.
+      const hidden = await hiddenFields(user, c.company_id);
+      const openGaps = (gaps as unknown as { field_code: string }[]).filter((g) => !hidden.has(g.field_code));
+      gaps.length = 0;
+      gaps.push(...(openGaps as unknown as Json[]));
       const toGo = (who: string) => {
         const l = left.find((x) => x.answered_by === who) ?? { missing: 0, draft: 0, under_review: 0 };
         return { ...l, total: l.missing + l.draft + l.under_review };

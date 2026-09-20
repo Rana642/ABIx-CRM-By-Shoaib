@@ -4,10 +4,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 //
 // A session cookie, issued by /login after the password and, where set up, the two-step code. The
 // middleware cannot reach the database, so it asks the app's own /api/auth/session who the cookie
-// belongs to, and passes that on to the API as x-console-user — never taken from the browser. A
-// session that was ended, or whose person was suspended or revoked, stops working on the next
-// request (a match is remembered for 15 seconds at most). What each person may do is checked by the
-// API and the database, not here.
+// belongs to, and passes that on to the API as x-console-user — never taken from the browser. Every
+// request asks again, so a session that was ended, or whose person was suspended or revoked, stops
+// working on the very next request (Serge, 19 Sept: no window at all, not even a few seconds). What
+// each person may do is checked by the API and the database on each request, not here.
 //
 // /webhook/ is not served by this app (the web server sends it to n8n), so Meta is unaffected.
 
@@ -21,12 +21,8 @@ const OPEN_EXACT = ['/login', '/invite', '/mcp', '/api/mcp', '/api/auth/session'
 const OPEN_PREFIXES = ['/.well-known/oauth-', '/.well-known/openid-configuration', '/oauth/', '/api/oauth/'];
 
 const SESSION_URL = `http://127.0.0.1:${process.env.PORT || 3300}/api/auth/session`;
-const REMEMBER_MS = 15_000;
-const remembered = new Map<string, { user: string; until: number }>();
 
 async function sessionUser(token: string): Promise<string | null> {
-  const hit = remembered.get(token);
-  if (hit && hit.until > Date.now()) return hit.user;
   try {
     const r = await fetch(SESSION_URL, {
       method: 'POST',
@@ -35,15 +31,10 @@ async function sessionUser(token: string): Promise<string | null> {
       cache: 'no-store',
     });
     const d = r.ok ? await r.json() : null;
-    if (d?.ok && typeof d.username === 'string') {
-      if (remembered.size > 500) remembered.clear();
-      remembered.set(token, { user: d.username, until: Date.now() + REMEMBER_MS });
-      return d.username;
-    }
+    if (d?.ok && typeof d.username === 'string') return d.username;
   } catch {
     // Unreachable: treat as signed out rather than let anyone in.
   }
-  remembered.delete(token);
   return null;
 }
 

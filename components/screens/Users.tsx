@@ -18,7 +18,7 @@ type Assignment = {
   role: string; granted_by: string; granted_at: string; expires_at: string | null; expired: boolean; note: string | null;
 };
 type Grant = { grant_id: string; username: string; permission_code: string; company: string | null; granted_by: string; expires_at: string | null };
-type Invitation = { username: string; invited_by: string; created_at: string; expires_at: string; expired: boolean };
+type Invitation = { username: string; email: string | null; invited_by: string; created_at: string; expires_at: string; expired: boolean; emailed_at: string | null };
 type Role = { role_code: string; name: string; description: string };
 type Company = { company_id: string; name: string; code: string };
 type Audit = { at: string; actor: string | null; action: string; target: string | null; company: string | null; permission: string | null; outcome: string; detail: Record<string, unknown> };
@@ -45,7 +45,7 @@ export function Users() {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [link, setLink] = useState<{ username: string; url: string } | null>(null);
+  const [link, setLink] = useState<{ username: string; url: string; emailed_to: string | null; email_error: string | null } | null>(null);
   const [invite, setInvite] = useState({ username: '', display_name: '', email: '', mfa_required: true, access_expires_at: '' });
   const [assign, setAssign] = useState<{ username: string; company_id: string; role: string; expires_at: string }>({
     username: '', company_id: '', role: 'viewer', expires_at: '',
@@ -72,7 +72,9 @@ export function Users() {
       setError(d.error);
       return null;
     }
-    if (d.invitation_link) setLink({ username: String(body.username), url: d.invitation_link });
+    if (d.invitation_link) {
+      setLink({ username: String(body.username), url: d.invitation_link, emailed_to: d.emailed_to ?? null, email_error: d.email_error ?? null });
+    }
     await load();
     return d;
   }
@@ -112,9 +114,15 @@ export function Users() {
         <Card className="flex flex-col gap-space-8 border border-primary">
           <span className="font-headline-sm text-headline-sm text-on-surface">Invitation link for {link.username}</span>
           <span className="font-body-sm text-body-sm text-on-surface-variant">
-            Send it to them yourself (WhatsApp or email). It is shown only now, works once and expires in 72 hours.
-            They choose their own password and, if required, set up two-step sign-in.
+            {link.emailed_to
+              ? `Sent by email to ${link.emailed_to}. The same link is here in case you want to pass it on yourself.`
+              : 'Send it to them yourself (WhatsApp or email).'}{' '}
+            It is shown only now, works once and expires in 72 hours. They choose their own password and, if required,
+            set up two-step sign-in.
           </span>
+          {link.email_error && (
+            <span className="font-body-sm text-body-sm text-error">{link.email_error}</span>
+          )}
           <code className="font-body-sm text-body-sm bg-surface-container-low rounded-lg px-space-8 py-space-8 break-all">{link.url}</code>
           <div className="flex gap-space-8">
             <button type="button" className={primary} onClick={() => navigator.clipboard?.writeText(link.url)}>Copy link</button>
@@ -231,12 +239,32 @@ export function Users() {
                 <tr key={u.username} className="border-t border-surface-container align-top">
                   <td className="px-space-16 py-space-12">
                     <div className="font-semibold text-on-surface">{u.display_name}</div>
-                    <div className="text-outline">{u.username}{u.email && u.email !== u.username ? ` · ${u.email}` : ''}</div>
+                    <div className="text-outline">
+                      {u.username}{u.email && u.email !== u.username ? ` · ${u.email}` : ''}
+                      {!u.is_owner && (
+                        <button
+                          type="button"
+                          className="ml-space-8 text-primary font-semibold"
+                          disabled={busy}
+                          onClick={() => {
+                            const email = prompt(`Email address for ${u.display_name}, where invitations are sent:`, u.email ?? '');
+                            if (email !== null) act({ action: 'set_email', username: u.username, email: email.trim() });
+                          }}
+                        >
+                          {u.email ? 'Change email' : 'Add email'}
+                        </button>
+                      )}
+                    </div>
                     {u.access_expires_at && <div className="text-outline">Account until {when(u.access_expires_at)}</div>}
                   </td>
                   <td className="px-space-12 py-space-12">
                     <span className={`px-space-8 py-0.5 rounded-full font-label-sm text-label-sm ${STATUS_TONE[u.status]}`}>{u.status}</span>
-                    {inv && <div className="text-outline mt-space-4">{inv.expired ? 'Invitation expired' : `Invited, until ${when(inv.expires_at)}`}</div>}
+                    {inv && (
+                      <div className="text-outline mt-space-4">
+                        {inv.expired ? 'Invitation expired' : `Invited, until ${when(inv.expires_at)}`}
+                        <div>{inv.emailed_at ? `Emailed to ${inv.email} on ${when(inv.emailed_at)}` : 'Not emailed — pass the link on yourself'}</div>
+                      </div>
+                    )}
                   </td>
                   <td className="px-space-12 py-space-12">
                     {u.is_owner ? (
@@ -288,8 +316,8 @@ export function Users() {
                         {u.status !== 'revoked' && (
                           <button type="button" className={quiet} disabled={busy}
                             onClick={() => act({ action: 'reinvite', username: u.username },
-                              `Send ${u.display_name} a new invitation? They choose a new password; their current password and sessions stop working.`)}>
-                            New invitation
+                              `Send ${u.display_name} a new invitation? It is emailed to them if their account has an email address, and it is how a forgotten password is reset. Their current password and sessions stop working.`)}>
+                            New invitation or password reset
                           </button>
                         )}
                         {u.status !== 'revoked' && u.mfa_enabled && (
@@ -322,8 +350,15 @@ export function Users() {
                         {u.status !== 'revoked' && (
                           <button type="button" className={danger} disabled={busy}
                             onClick={() => act({ action: 'revoke', username: u.username },
-                              `Revoke ${u.display_name} for good? Their password, roles and sessions are removed. This cannot be undone; a new account would be needed.`)}>
+                              `Revoke ${u.display_name}? Their password, roles and sessions are removed at once. You can bring the account back later with Restore, which sends a fresh invitation.`)}>
                             Revoke
+                          </button>
+                        )}
+                        {u.status === 'revoked' && (
+                          <button type="button" className={quiet} disabled={busy}
+                            onClick={() => act({ action: 'restore', username: u.username },
+                              `Restore ${u.display_name}? They receive a new invitation and choose a new password and two-step code. Their previous workspaces stay removed, so assign them again.`)}>
+                            Restore
                           </button>
                         )}
                       </div>

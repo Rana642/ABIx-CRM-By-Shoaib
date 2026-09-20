@@ -34,14 +34,60 @@ const SAVE_KEYS = [
   'applies_to',
 ] as const;
 
+// Fields marked restricted are left out for anyone without sensitive.view on this business, and
+// reading them is recorded for anyone who has it (Serge, 18 and 19 Sept).
+async function restricted(actor: string, companyId: string) {
+  const { rows } = await pool.query<{ field_code: string }>(
+    'SELECT abix.fn_restricted_fields($1, $2) AS field_code',
+    [actor, companyId]
+  );
+  return new Set(rows.map((x) => x.field_code));
+}
+
 async function getHandler(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('company_id');
   if (!companyId) {
     return NextResponse.json({ error: 'company_id is required' }, { status: 400 });
   }
+  const actor = actorOf(req);
+  const hidden = await restricted(actor, companyId);
+
+  // Taking the record out of Aya in bulk is its own permission, separate from reading it on screen
+  // (Serge, 18 Sept). Restricted fields stay out of the file unless the person may see them.
+  if (req.nextUrl.searchParams.get('export') === 'csv') {
+    if (!(await can(actor, 'data.export', companyId))) {
+      await recordDenied(actor, 'export the onboarding record', 'data.export', companyId);
+      return denied();
+    }
+    const { rows } = await pool.query<{ field_code: string; label: string; status: string; visibility: string; value: string }>(
+      `SELECT f.field_code, f.label, coalesce(r.status, 'missing') AS status,
+              coalesce(r.visibility, f.default_visibility) AS visibility,
+              coalesce(r.value_text, r.value_rows::text, '') AS value
+         FROM abix.intake_fields f
+         LEFT JOIN abix.intake_responses r ON r.company_id = $1 AND r.field_code = f.field_code
+         JOIN abix.intake_sections s ON s.section_code = f.section_code
+        ORDER BY s.seq, f.seq`,
+      [companyId]
+    );
+    const kept = rows.filter((x) => !hidden.has(x.field_code));
+    const cell = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = ['field,label,status,visibility,value']
+      .concat(kept.map((x) => [x.field_code, x.label, x.status, x.visibility, x.value].map(cell).join(',')))
+      .join('\r\n');
+    await pool.query("SELECT abix.fn_access_log($1, 'record.export', $1, $2, 'data.export', 'done', $3::jsonb)", [
+      actor, companyId, JSON.stringify({ fields: kept.length, restricted_left_out: hidden.size }),
+    ]);
+    return new NextResponse(csv, {
+      headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="onboarding-record.csv"' },
+    });
+  }
 
   const historyOf = req.nextUrl.searchParams.get('history');
   if (historyOf) {
+    if (hidden.has(historyOf)) {
+      await recordDenied(actor, 'read the history of a restricted field', 'sensitive.view', companyId, { field_code: historyOf });
+      return denied();
+    }
     const { rows } = await pool.query(
       `SELECT version, snapshot->>'status' AS status, snapshot->>'value_text' AS value_text,
               snapshot->'value_rows' AS value_rows, snapshot->>'source_ref' AS source_ref,
@@ -102,10 +148,18 @@ async function getHandler(req: NextRequest) {
     ),
   ]);
 
+  const sensitive = responses.rows.filter((x) => x.visibility === 'restricted');
+  if (hidden.size === 0 && sensitive.length > 0) {
+    await pool.query('SELECT abix.fn_log_sensitive_read($1, $2, $3, $4)', [
+      actor, companyId, 'onboarding record', sensitive.length,
+    ]);
+  }
   return NextResponse.json({
     sections: sections.rows,
-    fields: fields.rows,
-    responses: responses.rows,
+    fields: fields.rows.filter((f) => !hidden.has(f.field_code)),
+    responses: responses.rows.filter((x) => !hidden.has(x.field_code)),
+    // So the screen can say plainly that something is not being shown, rather than look complete.
+    restricted_hidden: hidden.size,
     rollup: rollup.rows,
     preview: preview.rows[0] ?? null,
     settings: settings.rows[0] ?? { drives_brain: false, adopted_at: null, adopted_by: null },
