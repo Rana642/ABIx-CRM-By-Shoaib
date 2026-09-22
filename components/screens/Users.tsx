@@ -47,6 +47,7 @@ export function Users() {
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState<{ username: string; url: string; emailed_to: string | null; email_error: string | null } | null>(null);
   const [invite, setInvite] = useState({ username: '', display_name: '', email: '', mfa_required: true, access_expires_at: '' });
+  const [statusFilter, setStatusFilter] = useState<'active' | 'revoked' | 'all'>('active');
   const [assign, setAssign] = useState<{ username: string; company_id: string; role: string; expires_at: string }>({
     username: '', company_id: '', role: 'viewer', expires_at: '',
   });
@@ -222,6 +223,22 @@ export function Users() {
 
       {/* People */}
       <Card padded={false} className="overflow-x-auto">
+        <div className="flex items-center justify-between gap-space-12 px-space-16 py-space-12 border-b border-surface-container">
+          <span className="font-headline-sm text-headline-sm text-on-surface">People</span>
+          <div className="flex items-center gap-space-4" role="group" aria-label="Filter by status">
+            {(['active', 'revoked', 'all'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setStatusFilter(f)}
+                className={`px-space-12 py-space-4 rounded-lg font-label-sm text-label-sm capitalize ${
+                  statusFilter === f ? 'bg-primary-container text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+              >
+                {f} ({f === 'all' ? data.users.length : data.users.filter((u) => u.status === f).length})
+              </button>
+            ))}
+          </div>
+        </div>
         <table className="w-full min-w-[860px] font-body-sm text-body-sm">
           <thead>
             <tr className="text-left text-outline font-label-sm text-label-sm uppercase">
@@ -233,7 +250,9 @@ export function Users() {
             </tr>
           </thead>
           <tbody>
-            {data.users.map((u) => {
+            {data.users
+              .filter((u) => statusFilter === 'all' || u.status === statusFilter)
+              .map((u) => {
               const inv = pendingInvite(u.username);
               return (
                 <tr key={u.username} className="border-t border-surface-container align-top">
