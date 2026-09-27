@@ -218,6 +218,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(rows[0].r);
     }
 
+    if (body.action === 'approve_fields') {
+      // The Review queue: approve only the fields the owner has read (owner only, enforced by the function).
+      const codes = Array.isArray(body.field_codes)
+        ? (body.field_codes as unknown[]).filter((c): c is string => typeof c === 'string')
+        : [];
+      if (codes.length === 0 || codes.length > 100) {
+        return NextResponse.json({ error: 'Name between 1 and 100 fields to approve.' }, { status: 400 });
+      }
+      const { rows } = await pool.query('SELECT abix.fn_intake_approve_bulk($1::jsonb) AS r', [
+        JSON.stringify({
+          company_id: body.company_id,
+          field_codes: codes,
+          include_drafts: false,
+          actor,
+          via: 'the console review queue',
+        }),
+      ]);
+      return NextResponse.json(rows[0].r);
+    }
+
     if (body.action === 'publish') {
       // Checked before anything is written to the knowledge base.
       const allowed = await pool.query('SELECT abix.fn_intake_can_publish($1) AS ok', [actor]);

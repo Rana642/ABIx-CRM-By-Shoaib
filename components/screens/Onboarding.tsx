@@ -238,7 +238,8 @@ export function Onboarding({
 }) {
   const [data, setData] = useState<IntakeData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'fill' | 'gaps' | 'brain' | 'agent'>('fill');
+  const [tab, setTab] = useState<'fill' | 'review' | 'gaps' | 'brain' | 'agent'>('fill');
+  const [openedOnce, setOpenedOnce] = useState(false);
   const [sectionCode, setSectionCode] = useState('S00');
   const [filter, setFilter] = useState<'all' | 'todo' | 'review'>('all');
   const [toast, setToast] = useState<string | null>(null);
@@ -335,6 +336,11 @@ export function Onboarding({
   const totals = countStatuses(allCodes, byField);
   const me = data.me;
   const canApprove = !!me?.can_approve;
+  // Whoever approves lands on the Review queue first when something is waiting for them.
+  if (!openedOnce) {
+    setOpenedOnce(true);
+    if (canApprove && totals.under_review > 0) setTab('review');
+  }
   const gaps = data.fields.filter((f) => {
     const r = byField.get(f.field_code);
     return r?.blocking || ((r?.status === 'missing' || r?.status === 'draft') && !!r?.note);
@@ -374,6 +380,7 @@ export function Onboarding({
         {(
           [
             ['fill', 'Fill in', 'edit_note', null],
+            ['review', 'Review queue', 'fact_check', totals.under_review],
             ['gaps', 'Gaps & decisions', 'flag', gaps.length],
             ['brain', 'Brain modules', 'neurology', null],
             ['agent', 'What the agent knows', 'record_voice_over', publishable.length],
@@ -437,6 +444,24 @@ export function Onboarding({
         </div>
       )}
 
+      {tab === 'review' && (
+        <ReviewQueue
+          sections={data.sections}
+          fields={data.fields}
+          byField={byField}
+          canApprove={canApprove}
+          onOpen={openField}
+          onApprove={async (codes) => {
+            const res = await post({ action: 'approve_fields', field_codes: codes });
+            if (!res.ok) return res.error;
+            await load();
+            if (data.settings.drives_brain) onBrainChanged();
+            setToast(`${res.data.approved_count} field${res.data.approved_count === 1 ? '' : 's'} approved`);
+            return null;
+          }}
+        />
+      )}
+
       {tab === 'gaps' && (
         <GapRegister fields={data.fields} gaps={gaps} byField={byField} sections={data.sections} onOpen={openField} />
       )}
@@ -469,6 +494,170 @@ export function Onboarding({
           {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+function previewOf(r: IntakeResponse): string {
+  if (r.value_text) return r.value_text.length > 260 ? `${r.value_text.slice(0, 260)}…` : r.value_text;
+  const rows = r.value_rows ?? [];
+  if (rows.length === 0) return 'No answer recorded.';
+  const first = Object.values(rows[0]).filter((v) => v).slice(0, 3).join(' · ');
+  return `${rows.length} row${rows.length === 1 ? '' : 's'}: ${first}${first.length >= 160 ? '…' : ''}`;
+}
+
+// Everything waiting for the owner's approval, grouped by section. Read a field, open it to change it, approve
+// it on its own, or approve a whole group once it has been read. Nothing reaches the agent until it is approved
+// and published.
+function ReviewQueue({
+  sections,
+  fields,
+  byField,
+  canApprove,
+  onOpen,
+  onApprove,
+}: {
+  sections: IntakeSection[];
+  fields: IntakeField[];
+  byField: Map<string, IntakeResponse>;
+  canApprove: boolean;
+  onOpen: (code: string) => void;
+  onApprove: (codes: string[]) => Promise<string | null>;
+}) {
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const groups = sections
+    .map((s) => ({
+      section: s,
+      items: fields.filter((f) => f.section_code === s.section_code && byField.get(f.field_code)?.status === 'under_review'),
+    }))
+    .filter((g) => g.items.length > 0);
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+
+  async function run(key: string, codes: string[]) {
+    setBusy(key);
+    setError(null);
+    const err = await onApprove(codes);
+    setBusy(null);
+    setConfirming(null);
+    if (err) setError(err);
+  }
+
+  if (total === 0) {
+    return (
+      <Card className="max-w-3xl">
+        <p className="font-body-md text-body-md text-on-surface">Nothing is waiting for review.</p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-space-16 max-w-4xl">
+      <Card>
+        <h2 className="font-headline-sm text-headline-sm text-on-surface">
+          {total} field{total === 1 ? '' : 's'} waiting for {canApprove ? 'your approval' : "the owner's approval"}
+        </h2>
+        <p className="font-body-sm text-body-sm text-on-surface-variant mt-space-4">
+          Grouped by section, in {groups.length} group{groups.length === 1 ? '' : 's'}. Read a field, open it to change it, approve it on its own,
+          or approve a whole group once you have read it. Nothing reaches the agent until it is approved and published.
+          {!canApprove && ' You can read them here; only the owner approves.'}
+        </p>
+      </Card>
+
+      {error && (
+        <div role="alert" className="rounded-lg border border-error-container bg-error-container/40 px-space-16 py-space-12 font-body-sm text-body-sm text-on-surface">
+          {error}
+        </div>
+      )}
+
+      {groups.map(({ section, items }) => {
+        const codes = items.map((f) => f.field_code);
+        return (
+          <Card key={section.section_code}>
+            <div className="flex flex-wrap items-center justify-between gap-space-12">
+              <div>
+                <h3 className="font-headline-sm text-headline-sm text-on-surface">
+                  {section.section_code} · {section.title}
+                </h3>
+                <p className="font-body-sm text-body-sm text-on-surface-variant">{items.length} waiting</p>
+              </div>
+              {canApprove &&
+                (confirming === section.section_code ? (
+                  <div className="flex items-center gap-space-8">
+                    <span className="font-body-sm text-body-sm text-on-surface">
+                      Approve these {items.length}?
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => run(section.section_code, codes)}
+                      className="px-space-12 py-space-8 rounded-lg bg-secondary text-on-secondary font-body-sm text-body-sm font-semibold disabled:opacity-60"
+                    >
+                      {busy === section.section_code ? 'Approving…' : 'Yes, approve'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirming(null)}
+                      className="px-space-12 py-space-8 rounded-lg bg-surface-container-lowest text-on-surface-variant font-body-sm text-body-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => setConfirming(section.section_code)}
+                    className="px-space-12 py-space-8 rounded-lg bg-secondary text-on-secondary font-body-sm text-body-sm font-semibold disabled:opacity-60"
+                  >
+                    Approve all {items.length} in this group
+                  </button>
+                ))}
+            </div>
+            <ul className="mt-space-12 divide-y divide-outline-variant/40">
+              {items.map((f) => {
+                const r = byField.get(f.field_code)!;
+                return (
+                  <li key={f.field_code} className="py-space-12 flex flex-col gap-space-8">
+                    <div className="flex flex-wrap items-start justify-between gap-space-8">
+                      <div>
+                        <span className="font-body-md text-body-md font-semibold text-on-surface">{f.label}</span>{' '}
+                        <span className="font-label-sm text-label-sm text-outline">{f.field_code}</span>
+                      </div>
+                      <div className="flex items-center gap-space-8">
+                        <button
+                          type="button"
+                          onClick={() => onOpen(f.field_code)}
+                          className="px-space-12 py-space-4 rounded-lg bg-surface-container-lowest text-on-surface-variant font-body-sm text-body-sm hover:bg-surface-container-high"
+                        >
+                          Open
+                        </button>
+                        {canApprove && (
+                          <button
+                            type="button"
+                            disabled={busy !== null}
+                            onClick={() => run(f.field_code, [f.field_code])}
+                            className="px-space-12 py-space-4 rounded-lg bg-secondary text-on-secondary font-body-sm text-body-sm font-semibold disabled:opacity-60"
+                          >
+                            {busy === f.field_code ? 'Approving…' : 'Approve'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="font-body-sm text-body-sm text-on-surface-variant">{previewOf(r)}</p>
+                    <p className="font-label-sm text-label-sm text-outline">
+                      Sent for review {formatDate(r.updated_at)} by {r.updated_by}
+                      {r.source_ref ? ` · Source: ${r.source_ref}` : ''}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        );
+      })}
     </div>
   );
 }
