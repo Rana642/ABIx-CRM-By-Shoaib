@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { can, denied, me as accessMe, recordDenied } from '@/lib/access';
+import { maskSensitive } from '@/lib/mask';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +64,20 @@ export async function GET(req: NextRequest) {
        LIMIT 500`,
       [conversationId]
     );
-    return NextResponse.json({ messages: rows });
+    // Card, IBAN, social-security and passport/ID numbers stay hidden unless the person has sensitive.view on this
+    // business (today only the owner); when they are shown, the view is logged.
+    const mayseeSensitive = await can(actor, 'sensitive.view', companyId);
+    let hidden = 0;
+    const messages = rows.map((r) => {
+      const m = maskSensitive(r.body);
+      hidden += m.masked;
+      return mayseeSensitive ? r : { ...r, body: m.text };
+    });
+    if (hidden > 0 && mayseeSensitive && companyId) {
+      await pool.query('SELECT abix.fn_log_sensitive_read($1, $2::uuid, $3, $4)',
+        [actor, companyId, 'WhatsApp messages with sensitive numbers', hidden]).catch(() => undefined);
+    }
+    return NextResponse.json({ messages, sensitive_hidden: mayseeSensitive ? 0 : hidden });
   }
 
   const [conversations, pauses, businesses, meRow] = await Promise.all([
@@ -114,7 +128,8 @@ export async function GET(req: NextRequest) {
     me_name: meRow.rows[0]?.display_name ?? actorOf(req).split('@')[0],
     // What the person may do, per workspace, so the screen shows only allowed controls.
     access: await accessMe(actor),
-    conversations: conversations.rows,
+    // The list preview never shows sensitive numbers, whoever is looking.
+    conversations: conversations.rows.map((c) => ({ ...c, last_body: maskSensitive(c.last_body).text })),
     pauses: pauses.rows,
     businesses: businesses.rows,
   });
